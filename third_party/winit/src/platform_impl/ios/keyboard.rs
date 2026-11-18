@@ -78,9 +78,17 @@ fn key_event(key: &Retained<UIKey>, state: ElementState, with_text: bool) -> Key
             _ => Key::Unidentified(crate::keyboard::NativeKey::Unidentified),
         },
     };
+    // A shortcut (Cmd or Ctrl held) types nothing, as on macOS.
+    let flags = unsafe { key.modifierFlags() };
+    let shortcut = flags.intersects(
+        UIKeyModifierFlags::UIKeyModifierCommand | UIKeyModifierFlags::UIKeyModifierControl,
+    );
     let text: Option<smol_str::SmolStr> = match (&logical_key, state) {
-        (Key::Character(text), ElementState::Pressed) if with_text => Some(text.clone()),
-        (Key::Named(NamedKey::Enter), ElementState::Pressed) if with_text => Some("\r".into()),
+        _ if !with_text || shortcut || state != ElementState::Pressed => None,
+        (Key::Character(text), _) => Some(text.clone()),
+        (Key::Named(NamedKey::Space), _) => Some(" ".into()),
+        (Key::Named(NamedKey::Enter), _) => Some("\r".into()),
+        (Key::Named(NamedKey::Tab), _) => Some("\t".into()),
         _ => None,
     };
     if state == ElementState::Pressed {

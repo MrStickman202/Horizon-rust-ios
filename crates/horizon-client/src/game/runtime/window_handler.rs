@@ -500,6 +500,7 @@ impl ApplicationHandler for Game<'_> {
         }
     }
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        self.touch_tick();
         // Every event-loop pass, drawn or not: a window that stops redrawing (a lost
         // device, an occluded window) must still end after a server crash.
         self.exit_after_server_crash();

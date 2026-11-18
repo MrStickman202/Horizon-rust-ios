@@ -2,7 +2,9 @@
 //! names, toggle keys, mouse settings, controllers, the clipboard and window
 //! options. horizon-client re-exports each module under its old path
 //! (`horizon_client::keybinds`, ...).
-#![forbid(unsafe_code)]
+#![cfg_attr(not(target_os = "ios"), forbid(unsafe_code))]
+// iOS: only the clipboard (UIPasteboard, `clipboard.rs`) calls the Objective-C runtime.
+#![cfg_attr(target_os = "ios", deny(unsafe_code))]
 pub mod actions;
 pub mod clipboard;
 pub mod gamepad;

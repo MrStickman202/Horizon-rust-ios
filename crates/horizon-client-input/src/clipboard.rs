@@ -112,24 +112,44 @@ pub fn helper_clipboard_contents(clipboard: &str) -> String {
     strip_formatting(&clipboard.replace('\r', ""))
 }
 
-/// iOS: arboard has no backend there, so no system clipboard is reached and text copied in the
-/// game is pasted in the game only.
+/// iOS: arboard has no backend there; the system pasteboard (`UIPasteboard`) is the clipboard,
+/// behind arboard's names.
 #[cfg(target_os = "ios")]
+#[allow(unsafe_code)]
 mod arboard {
+    use objc2::rc::Retained;
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+    use objc2_foundation::NSString;
+
     pub struct Clipboard;
     pub enum Error {
         ContentNotAvailable,
         Unavailable,
     }
+    fn board() -> Option<&'static AnyObject> {
+        // SAFETY: UIKit's general pasteboard, a process-wide object that lives as long as it.
+        unsafe {
+            let board: *mut AnyObject = msg_send![class!(UIPasteboard), generalPasteboard];
+            board.as_ref()
+        }
+    }
     impl Clipboard {
         pub fn new() -> Result<Self, Error> {
-            Err(Error::Unavailable)
+            board().map(|_| Clipboard).ok_or(Error::Unavailable)
         }
         pub fn get_text(&mut self) -> Result<String, Error> {
-            Err(Error::ContentNotAvailable)
+            let board = board().ok_or(Error::Unavailable)?;
+            // SAFETY: `-[UIPasteboard string]` returns an NSString or nil.
+            let text: Option<Retained<NSString>> = unsafe { msg_send![board, string] };
+            text.map(|t| t.to_string()).ok_or(Error::ContentNotAvailable)
         }
-        pub fn set_text(&mut self, _text: String) -> Result<(), Error> {
-            Err(Error::Unavailable)
+        pub fn set_text(&mut self, text: String) -> Result<(), Error> {
+            let board = board().ok_or(Error::Unavailable)?;
+            let text = NSString::from_str(&text);
+            // SAFETY: `-[UIPasteboard setString:]` takes an NSString.
+            let _: () = unsafe { msg_send![board, setString: &*text] };
+            Ok(())
         }
     }
 }

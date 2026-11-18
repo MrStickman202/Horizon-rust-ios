@@ -85,14 +85,15 @@ impl ActiveEventLoop {
         AppState::get_mut(self.mtm).control_flow()
     }
 
+    /// Horizon: a game's Quit ends the app. After this pass of the loop the handler gets
+    /// `exiting` (the game saves), then the process ends (`app_state::exit_if_requested`).
+    /// Apple's guidelines don't expect an app to quit itself; a sideloaded game does.
     pub(crate) fn exit(&self) {
-        // https://developer.apple.com/library/archive/qa/qa1561/_index.html
-        // it is not possible to quit an iOS app gracefully and programmatically
-        tracing::warn!("`ControlFlow::Exit` ignored on iOS");
+        super::app_state::request_exit();
     }
 
     pub(crate) fn exiting(&self) -> bool {
-        false
+        super::app_state::exit_requested()
     }
 
     pub(crate) fn owned_display_handle(&self) -> OwnedDisplayHandle {

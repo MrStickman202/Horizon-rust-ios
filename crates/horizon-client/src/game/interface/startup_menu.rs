@@ -279,7 +279,7 @@ impl StartupMenu {
     }
 
     fn shortcut(&mut self, event: &KeyEvent) -> Option<clipboard::EditShortcut> {
-        let edit = if cfg!(target_os = "macos") {
+        let edit = if cfg!(target_vendor = "apple") {
             self.modifiers.super_key()
         } else {
             self.modifiers.control_key()
@@ -315,7 +315,7 @@ impl StartupMenu {
         // `TabNavigationBar.keyPressed` comes before the open tab's own
         // widgets: Ctrl plus a digit or Tab picks a tab instead of reaching
         // them.
-        let ctrl = if cfg!(target_os = "macos") {
+        let ctrl = if cfg!(target_vendor = "apple") {
             self.modifiers.super_key()
         } else {
             self.modifiers.control_key()
@@ -777,7 +777,7 @@ impl Loading {
             return;
         }
         let menu = &mut self.menu;
-        let control_with_quirk = if cfg!(target_os = "macos") {
+        let control_with_quirk = if cfg!(target_vendor = "apple") {
             menu.modifiers.super_key()
         } else {
             menu.modifiers.control_key()

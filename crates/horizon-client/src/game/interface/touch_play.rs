@@ -4,7 +4,7 @@
 //! controls press the same keys and mouse buttons a keyboard would (`control_key_down`,
 //! `play_mouse`); a hotbar slot is picked as a number key picks it.
 use super::*;
-use horizon_client::touch_controls::{Control, Layout, Shown};
+use horizon_client::touch_controls::{Control, Layout, Scheme, Shown};
 use std::collections::HashMap;
 use winit::event::{MouseButton, Touch, TouchPhase};
 
@@ -12,14 +12,19 @@ use winit::event::{MouseButton, Touch, TouchPhase};
 const KEYBOARD_QUIET: Duration = Duration::from_secs(4);
 /// Look: GUI px of finger travel to the view's mouse units.
 const LOOK_SCALE: f64 = 2.2;
+/// A finger held this long on the world without moving breaks (the tap schemes).
+const HOLD_TO_BREAK: Duration = Duration::from_millis(300);
+/// GUI px a finger may wander and still be a tap or a hold.
+const TAP_SLOP: f32 = 8.0;
 
 #[derive(Clone, Copy, Debug)]
 enum Role {
     /// The move stick, from where the finger came down.
     Stick { origin: [f32; 2] },
     Button(Control),
-    /// Turning the view: the finger's last position in physical px.
-    Look { last: (f64, f64) },
+    /// Turning the view: the finger's last position in physical px, where (GUI px) and when it
+    /// came down, whether it wandered off (no tap) and whether its hold breaks.
+    Look { last: (f64, f64), start: [f32; 2], at: Instant, moved: bool, breaking: bool },
     /// A tap on the hotbar.
     Slot,
 }
@@ -36,10 +41,16 @@ pub(super) struct TouchPlay {
     stick_keys: Vec<KeyCode>,
     held: Vec<Control>,
     sneaking: bool,
+    /// The layout, read from `horizon-touch.txt` at the first touch.
+    scheme: Option<Scheme>,
 }
 
 fn key_of(control: Control) -> Option<KeyCode> {
     Some(match control {
+        Control::Forward => KeyCode::KeyW,
+        Control::Back => KeyCode::KeyS,
+        Control::Left => KeyCode::KeyA,
+        Control::Right => KeyCode::KeyD,
         Control::Jump => KeyCode::Space,
         Control::Inventory => KeyCode::KeyE,
         Control::Chat => KeyCode::KeyT,
@@ -55,10 +66,14 @@ impl Game<'_> {
         })
     }
 
+    fn touch_scheme(&self) -> Scheme {
+        self.touch_play.scheme.unwrap_or_default()
+    }
+
     fn touch_layout(&self) -> Option<Layout> {
         let r = self.renderer.as_ref()?;
         let batch = HudBatch::new([r.config.width, r.config.height], self.settings.gui_scale_inputs());
-        Some(Layout::new(batch.width, batch.height))
+        Some(Layout::new(batch.width, batch.height, self.touch_scheme()))
     }
 
     /// A key or a controller hides the controls for a while.
@@ -90,8 +105,18 @@ impl Game<'_> {
             }
             return false;
         }
+        if self.touch_play.scheme.is_none() {
+            self.touch_play.scheme = Some(Scheme::load(&horizon_client::logging::player_dir()));
+        }
         let scale = self.touch_scale();
         let at = [touch.location.x as f32 / scale, touch.location.y as f32 / scale];
+        let look = Role::Look {
+            last: (touch.location.x, touch.location.y),
+            start: at,
+            at: Instant::now(),
+            moved: false,
+            breaking: false,
+        };
         let id = touch.id;
         match touch.phase {
             TouchPhase::Started => {
@@ -117,19 +142,27 @@ impl Game<'_> {
                             self.touch_play.knob = Some(at);
                             Role::Stick { origin: at }
                         } else {
-                            Role::Look { last: (touch.location.x, touch.location.y) }
+                            look
                         }
                     }
-                    _ => Role::Look { last: (touch.location.x, touch.location.y) },
+                    _ => look,
                 };
                 self.touch_play.fingers.insert(id, role);
             }
             TouchPhase::Moved => match self.touch_play.fingers.get(&id).copied() {
-                Some(Role::Look { last }) => {
+                Some(Role::Look { last, start, at: down_at, moved, breaking }) => {
                     let (dx, dy) = (touch.location.x - last.0, touch.location.y - last.1);
-                    self.touch_play
-                        .fingers
-                        .insert(id, Role::Look { last: (touch.location.x, touch.location.y) });
+                    let moved = moved || (at[0] - start[0]).hypot(at[1] - start[1]) > TAP_SLOP;
+                    self.touch_play.fingers.insert(
+                        id,
+                        Role::Look {
+                            last: (touch.location.x, touch.location.y),
+                            start,
+                            at: down_at,
+                            moved,
+                            breaking,
+                        },
+                    );
                     let s = f64::from(scale).max(1.0);
                     self.mouse.on_move(0.0, 0.0, dx / s * LOOK_SCALE, dy / s * LOOK_SCALE, true, true);
                     self.last_input = Instant::now();
@@ -147,11 +180,50 @@ impl Game<'_> {
                         self.touch_play.knob = None;
                         self.touch_set_stick_keys(Vec::new());
                     }
+                    Some(Role::Look { moved, breaking, .. }) => {
+                        if breaking {
+                            let _ = self.play_mouse(MouseButton::Left, false);
+                        } else if !moved
+                            && touch.phase == TouchPhase::Ended
+                            && self.touch_play.shown
+                            && self.touch_scheme().taps_the_world()
+                        {
+                            // A tap on the world: use (place, open, eat) what the crosshair is on.
+                            let _ = self.play_mouse(MouseButton::Right, true);
+                            let _ = self.play_mouse(MouseButton::Right, false);
+                        }
+                    }
                     _ => {}
                 }
             }
         }
         true
+    }
+
+    /// Each pass of the loop: a finger held still on the world long enough starts breaking.
+    pub(super) fn touch_tick(&mut self) {
+        if !self.touch_play.shown || !self.touch_scheme().taps_the_world() {
+            return;
+        }
+        let starting: Vec<u64> = self
+            .touch_play
+            .fingers
+            .iter()
+            .filter_map(|(id, role)| match role {
+                Role::Look { at, moved: false, breaking: false, .. }
+                    if at.elapsed() >= HOLD_TO_BREAK =>
+                {
+                    Some(*id)
+                }
+                _ => None,
+            })
+            .collect();
+        for id in starting {
+            if let Some(Role::Look { breaking, .. }) = self.touch_play.fingers.get_mut(&id) {
+                *breaking = true;
+            }
+            let _ = self.play_mouse(MouseButton::Left, true);
+        }
     }
 
     fn touch_stick(&mut self, origin: [f32; 2], at: [f32; 2]) {
@@ -227,8 +299,12 @@ impl Game<'_> {
     /// Lets go of everything the fingers hold (a screen opened, a key took over).
     fn touch_release_all(&mut self) {
         for (_, role) in std::mem::take(&mut self.touch_play.fingers) {
-            if let Role::Button(control) = role {
-                self.touch_press(control, false);
+            match role {
+                Role::Button(control) => self.touch_press(control, false),
+                Role::Look { breaking: true, .. } => {
+                    let _ = self.play_mouse(MouseButton::Left, false);
+                }
+                _ => {}
             }
         }
         self.touch_play.knob = None;
@@ -244,7 +320,7 @@ impl Game<'_> {
         if !self.touch_play.shown || !self.touch_playing() {
             return;
         }
-        let layout = Layout::new(batch.width, batch.height);
+        let layout = Layout::new(batch.width, batch.height, self.touch_scheme());
         let stick = self
             .touch_play
             .fingers

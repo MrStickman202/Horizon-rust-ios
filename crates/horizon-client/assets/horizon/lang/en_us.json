@@ -1,4 +1,12 @@
 {
+  "horizon.touch.forward": "W",
+  "horizon.touch.back": "S",
+  "horizon.touch.left": "A",
+  "horizon.touch.right": "D",
+  "horizon.touch.scheme.joystick": "Joystick, tap to interact",
+  "horizon.touch.scheme.crosshair": "Joystick and crosshair",
+  "horizon.touch.scheme.dpad": "D-pad, tap to interact",
+  "horizon.ios.home.touch": "Touch controls",
   "horizon.touch.jump": "Jump",
   "horizon.touch.sneak": "Sneak",
   "horizon.touch.attack": "Hit",

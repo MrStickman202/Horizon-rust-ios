@@ -3,8 +3,62 @@
 //! Positions are in GUI px, the HUD's units.
 use crate::ui_theme::{Face, Ui, sizes};
 
+/// The three layouts Bedrock Edition offers on phones and tablets.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Scheme {
+    /// A move stick; tap the world to use, hold it to break.
+    #[default]
+    Joystick,
+    /// A move stick, a crosshair and Hit and Use buttons.
+    Crosshair,
+    /// Four arrow buttons; tap to use, hold to break.
+    DPad,
+}
+
+const FILE: &str = "horizon-touch.txt";
+
+impl Scheme {
+    pub const ALL: [Scheme; 3] = [Scheme::Joystick, Scheme::Crosshair, Scheme::DPad];
+    fn key(self) -> &'static str {
+        match self {
+            Scheme::Joystick => "joystick",
+            Scheme::Crosshair => "crosshair",
+            Scheme::DPad => "dpad",
+        }
+    }
+    /// Its name in the current language.
+    pub fn name(self) -> String {
+        crate::lang::get(match self {
+            Scheme::Joystick => "horizon.touch.scheme.joystick",
+            Scheme::Crosshair => "horizon.touch.scheme.crosshair",
+            Scheme::DPad => "horizon.touch.scheme.dpad",
+        })
+    }
+    pub fn next(self) -> Self {
+        let i = Self::ALL.iter().position(|s| *s == self).unwrap_or(0);
+        Self::ALL[(i + 1) % Self::ALL.len()]
+    }
+    /// Tapping and holding the world uses and breaks (no Hit or Use button).
+    pub fn taps_the_world(self) -> bool {
+        self != Scheme::Crosshair
+    }
+    /// The player's choice, kept beside `options.txt`.
+    pub fn load(dir: &std::path::Path) -> Self {
+        let text = std::fs::read_to_string(dir.join(FILE)).unwrap_or_default();
+        let key = text.lines().find_map(|l| l.trim().strip_prefix("scheme:")).unwrap_or("");
+        Self::ALL.into_iter().find(|s| s.key() == key).unwrap_or_default()
+    }
+    pub fn save(self, dir: &std::path::Path) -> std::io::Result<()> {
+        std::fs::write(dir.join(FILE), format!("scheme:{}\n", self.key()))
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Control {
+    Forward,
+    Back,
+    Left,
+    Right,
     Jump,
     Sneak,
     Attack,
@@ -24,6 +78,10 @@ impl Control {
             Control::Inventory => "horizon.touch.inventory",
             Control::Chat => "horizon.touch.chat",
             Control::Pause => "horizon.touch.pause",
+            Control::Forward => "horizon.touch.forward",
+            Control::Back => "horizon.touch.back",
+            Control::Left => "horizon.touch.left",
+            Control::Right => "horizon.touch.right",
         }
     }
 }
@@ -41,23 +99,37 @@ pub struct Layout {
 }
 
 impl Layout {
-    pub fn new(w: f32, h: f32) -> Self {
+    pub fn new(w: f32, h: f32, scheme: Scheme) -> Self {
         let margin = 14.0;
         let big = 22.0;
         let small = 15.0;
         let tiny = 11.0;
         let jump = [w - margin - big, h - margin - big - 26.0];
-        let buttons = vec![
+        let mut buttons = vec![
             (Control::Jump, jump, big),
             (Control::Sneak, [jump[0], jump[1] - big * 2.0 - 10.0], small),
-            (Control::Use, [jump[0] - big * 2.0 - 10.0, jump[1]], small),
-            (Control::Attack, [jump[0] - big * 1.6, jump[1] - big * 1.6 - 4.0], small),
             (Control::Pause, [w - margin - tiny, margin + tiny], tiny),
             (Control::Chat, [w - margin - tiny * 3.0 - 8.0, margin + tiny], tiny),
             (Control::Inventory, [w - margin - tiny * 5.0 - 16.0, margin + tiny], tiny),
         ];
+        if scheme == Scheme::Crosshair {
+            buttons.push((Control::Use, [jump[0] - big * 2.0 - 10.0, jump[1]], small));
+            buttons.push((Control::Attack, [jump[0] - big * 1.6, jump[1] - big * 1.6 - 4.0], small));
+        }
+        let stick_zone = if scheme == Scheme::DPad {
+            let pad = 16.0;
+            let centre = [margin + pad * 3.0, h - margin - pad * 3.0 - 10.0];
+            let step = pad * 2.0 + 2.0;
+            buttons.push((Control::Forward, [centre[0], centre[1] - step], pad));
+            buttons.push((Control::Back, [centre[0], centre[1] + step], pad));
+            buttons.push((Control::Left, [centre[0] - step, centre[1]], pad));
+            buttons.push((Control::Right, [centre[0] + step, centre[1]], pad));
+            [0.0; 4]
+        } else {
+            [0.0, h * 0.3, w * 0.4, h * 0.7]
+        };
         Self {
-            stick_zone: [0.0, h * 0.3, w * 0.4, h * 0.7],
+            stick_zone,
             stick_radius: 30.0,
             buttons,
             hotbar: [((w - 182.0) / 2.0).round(), h - 22.0, 182.0, 22.0],

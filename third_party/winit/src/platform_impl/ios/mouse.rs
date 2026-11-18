@@ -34,6 +34,13 @@ pub(crate) fn locked() -> bool {
 /// now, and those GameController reports later (it lists them only some time after the start).
 pub(crate) fn set_locked(window_id: RootWindowId, locked: bool) {
     LOCKED.with(|l| l.set(locked));
+    start(window_id);
+}
+
+/// Hooks the mice and trackpads for `window_id`: scrolling is reported whether or not the
+/// pointer is locked (UIKit gives a free pointer's scrolling to no view); movement and buttons
+/// only while it is.
+pub(crate) fn start(window_id: RootWindowId) {
     WINDOW.with(|w| w.set(Some(window_id)));
     observe_connections();
     hook_all();
@@ -119,7 +126,7 @@ fn hook(mouse: &Retained<GCMouse>) {
     }
     let scroll = unsafe { input.scroll() };
     let scrolled = RcBlock::new(|_: NonNull<GCControllerDirectionPad>, x: f32, y: f32| {
-        if locked() && (x != 0.0 || y != 0.0) {
+        if x != 0.0 || y != 0.0 {
             window_event(WindowEvent::MouseWheel {
                 device_id: DEVICE_ID,
                 delta: MouseScrollDelta::LineDelta(x / 10.0, y / 10.0),

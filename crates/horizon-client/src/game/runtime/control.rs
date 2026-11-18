@@ -735,7 +735,7 @@ impl Game<'_> {
                 // open book's Select All, Copy, Paste or Cut.
                 if self.book.is_some() && arg(2)? != "up" {
                     let held = |k: [KeyCode; 2]| k.iter().any(|k| self.keys.raw(k));
-                    let edit = if cfg!(target_os = "macos") {
+                    let edit = if cfg!(target_vendor = "apple") {
                         held([KeyCode::SuperLeft, KeyCode::SuperRight])
                     } else {
                         held([KeyCode::ControlLeft, KeyCode::ControlRight])

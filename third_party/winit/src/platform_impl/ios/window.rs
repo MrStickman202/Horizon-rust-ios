@@ -577,6 +577,8 @@ impl Window {
         let window = WinitUIWindow::new(mtm, &window_attributes, frame, &view_controller);
 
         app_state::set_key_window(mtm, &window);
+        // Horizon: mice and trackpads report their scrolling from the start (menus scroll).
+        super::mouse::start(RootWindowId(window.id()));
 
         // Like the Windows and macOS backends, we send a `ScaleFactorChanged` and `Resized`
         // event on window creation if the DPI factor != 1.0

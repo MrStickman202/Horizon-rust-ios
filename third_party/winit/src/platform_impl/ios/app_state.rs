@@ -715,6 +715,27 @@ pub fn handle_main_events_cleared(mtm: MainThreadMarker) {
 
     handle_nonuser_events(mtm, redraw_events);
     handle_nonuser_event(mtm, EventWrapper::StaticEvent(Event::AboutToWait));
+    exit_if_requested(mtm);
+}
+
+thread_local! {
+    static EXIT_REQUESTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub(crate) fn request_exit() {
+    EXIT_REQUESTED.with(|e| e.set(true));
+}
+
+pub(crate) fn exit_requested() -> bool {
+    EXIT_REQUESTED.with(|e| e.get())
+}
+
+/// Horizon: the handler asked to exit: it ends as at termination, then so does the process.
+fn exit_if_requested(mtm: MainThreadMarker) {
+    if exit_requested() {
+        terminated(&UIApplication::sharedApplication(mtm));
+        std::process::exit(0);
+    }
 }
 
 pub fn handle_events_cleared(mtm: MainThreadMarker) {

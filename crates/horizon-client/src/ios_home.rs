@@ -1,6 +1,7 @@
 //! iOS: the app's home screen, before the title (the game's `ios_launcher` shows it while the
 //! resources load). Drawn in Horizon's design language with the bundled fonts: the offline
 //! name, the Microsoft account, the game version and one Play button.
+use crate::touch_controls::Scheme;
 use crate::ui_theme::{Face, Ui, color, sizes};
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -15,6 +16,7 @@ const NAME_MAX: usize = 16;
 pub enum Hit {
     Name,
     SignIn,
+    Touch,
     Play,
 }
 
@@ -26,6 +28,8 @@ pub struct Launcher {
     pub pointer: (f64, f64),
     /// A line under the account row after Sign in.
     note: Option<String>,
+    /// The on-screen controls' layout (`touch_controls`).
+    scheme: Scheme,
 }
 
 struct Layout {
@@ -34,6 +38,7 @@ struct Layout {
     width: f32,
     name_field: [f32; 4],
     sign_in: [f32; 4],
+    touch: [f32; 4],
     play: [f32; 4],
 }
 
@@ -52,6 +57,7 @@ impl Launcher {
             editing: None,
             pointer: (0.0, 0.0),
             note: None,
+            scheme: Scheme::load(&crate::logging::player_dir()),
         })
     }
 
@@ -60,7 +66,7 @@ impl Launcher {
         let control = sizes().control_large;
         let title_line = 40.0;
         let label_line = 20.0;
-        let height = title_line + 22.0 + SECTION * 2.0 + (label_line + 6.0 + control) * 2.0
+        let height = title_line + 22.0 + SECTION * 3.0 + (label_line + 6.0 + control) * 3.0
             + SECTION + control + 40.0;
         let x = ((ui.w - width) / 2.0).round();
         let y = ((ui.h - height) / 2.0).max(16.0).round();
@@ -69,8 +75,10 @@ impl Launcher {
         at = name_field[1] + control + SECTION;
         let sign_in = [x, at + label_line + 6.0, width, control];
         at = sign_in[1] + control + 18.0 + SECTION;
+        let touch = [x, at + label_line + 6.0, width, control];
+        at = touch[1] + control + SECTION;
         let play = [x, at, width, control];
-        Layout { x, y, width, name_field, sign_in, play }
+        Layout { x, y, width, name_field, sign_in, touch, play }
     }
 
     pub fn draw(&self, ui: &mut Ui, ready: bool) {
@@ -120,6 +128,16 @@ impl Launcher {
         let note = self.note.clone().unwrap_or_else(|| crate::lang::get("horizon.ios.home.offline"));
         ui.text_line(Face::Regular, s.caption, 18.0, bx, by + bh + 8.0, color::muted(), &note);
 
+        // The touch controls' layout: a tap picks the next one.
+        label(ui, l.touch, "horizon.ios.home.touch");
+        let [tx, ty, tw, th] = l.touch;
+        let hovered = inside(l.touch, ui.cursor);
+        ui.rounded(tx, ty, tw, th, s.radius, if hovered { color::hover() } else { color::raised() });
+        ui.text_line(Face::Regular, s.ui, th, tx + 16.0, ty, color::text(), &self.scheme.name());
+        let more = "›";
+        let mw = ui.measure(Face::Medium, s.ui, more);
+        ui.text_line(Face::Medium, s.ui, th, tx + tw - 16.0 - mw, ty, color::muted(), more);
+
         // Play.
         let [px, py, pw, ph] = l.play;
         let hovered = inside(l.play, ui.cursor);
@@ -137,7 +155,12 @@ impl Launcher {
 
     pub fn hit(&self, ui: &Ui) -> Option<Hit> {
         let l = self.layout(ui);
-        [(l.name_field, Hit::Name), (l.sign_in, Hit::SignIn), (l.play, Hit::Play)]
+        [
+            (l.name_field, Hit::Name),
+            (l.sign_in, Hit::SignIn),
+            (l.touch, Hit::Touch),
+            (l.play, Hit::Play),
+        ]
             .into_iter()
             .find(|(rect, _)| inside(*rect, ui.cursor))
             .map(|(_, hit)| hit)
@@ -221,6 +244,14 @@ impl Launcher {
             Some(Hit::SignIn) => {
                 self.commit(window);
                 self.note = Some(crate::lang::get("horizon.ios.home.sign_in_soon"));
+                false
+            }
+            Some(Hit::Touch) => {
+                self.commit(window);
+                self.scheme = self.scheme.next();
+                if let Err(e) = self.scheme.save(&crate::logging::player_dir()) {
+                    log::warn!("Horizon: could not keep the touch controls: {e}");
+                }
                 false
             }
             Some(Hit::Play) => {

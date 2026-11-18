@@ -75,7 +75,7 @@ fn square_movement(v: [f32; 2]) -> [f32; 2] {
 /// - On macOS: Command (`super_key()`) + `Q`.
 /// - On Windows / Linux / other: Alt (`alt_key()`) + `F4`.
 pub fn is_quit_shortcut_down(modifiers: ModifiersState, keys: &HashSet<KeyCode>) -> bool {
-    if cfg!(target_os = "macos") {
+    if cfg!(target_vendor = "apple") {
         modifiers.super_key() && keys.contains(&KeyCode::KeyQ)
     } else {
         modifiers.alt_key() && keys.contains(&KeyCode::F4)
@@ -95,7 +95,7 @@ mod tests {
         assert!(!is_quit_shortcut_down(ModifiersState::empty(), &keys));
 
         keys.insert(KeyCode::F4);
-        if cfg!(target_os = "macos") {
+        if cfg!(target_vendor = "apple") {
             assert!(!is_quit_shortcut_down(alt, &keys));
             keys.remove(&KeyCode::F4);
             keys.insert(KeyCode::KeyQ);
