@@ -452,3 +452,10 @@ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FO
 OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
+
+## winit
+
+`third_party/winit` is [winit](https://github.com/rust-windowing/winit) 0.30.13 (Apache-2.0;
+`third_party/winit/LICENSE`), changed for the iOS app: hardware keyboard presses on iOS and
+iPadOS reach the game as key events with physical key codes, key up and modifiers
+(`src/platform_impl/ios/keyboard.rs`, `WinitUIWindow`'s `presses…:withEvent:`).
