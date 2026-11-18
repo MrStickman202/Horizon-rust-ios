@@ -45,15 +45,65 @@ fn set(name: &str, value: &Path) {
     }
 }
 
+/// Where a start that never shows anything can be read from the Files app: `logs/ios-start.txt`
+/// has the start's steps and anything the game printed (its standard error), and a panic's
+/// message and place.
+fn diagnostics(documents: &Path) {
+    use std::io::Write;
+    let logs = documents.join("logs");
+    let _ = std::fs::create_dir_all(&logs);
+    let path = logs.join("ios-start.txt");
+    if let Ok(file) = std::fs::File::create(&path) {
+        use std::os::fd::AsRawFd;
+        // SAFETY: at the start of `main`, before any thread: standard output and error now
+        // write to the file, which stays open for the life of the process.
+        unsafe {
+            libc::dup2(file.as_raw_fd(), 1);
+            libc::dup2(file.as_raw_fd(), 2);
+        }
+        std::mem::forget(file);
+    }
+    std::panic::set_hook(Box::new(|info| {
+        let thread = std::thread::current();
+        eprintln!(
+            "PANIC on thread {}: {info}\n{}",
+            thread.name().unwrap_or("?"),
+            std::backtrace::Backtrace::force_capture()
+        );
+        let _ = std::io::stderr().flush();
+    }));
+    step("main");
+}
+
+/// A line in `ios-start.txt`, written at once.
+fn step(what: &str) {
+    use std::io::Write;
+    let since = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis());
+    eprintln!("[{since}] step: {what}");
+    let _ = std::io::stderr().flush();
+}
+
 fn main() {
     let documents = documents();
-    let home = documents.join(".horizon");
-    let _ = std::fs::create_dir_all(&home);
-    // The app starts in "/", which it can't write: the game keeps its files in the working directory.
+    diagnostics(&documents);
+    // The app starts in "/", which it can't write: the game keeps its files in the working
+    // directory, and its logs and crash reports in HORIZON_HOME; both are Documents, so the
+    // Files app shows them.
     let _ = std::env::set_current_dir(&documents);
-    set("HORIZON_HOME", &home);
+    set("HORIZON_HOME", &documents);
     set("HORIZON_RESOURCES", &documents.join("26.3"));
+    // A watchdog: a start stuck before its first frame still says how long it has been alive.
+    std::thread::spawn(|| {
+        let started = std::time::Instant::now();
+        for wait in [5, 10, 15, 30] {
+            std::thread::sleep(std::time::Duration::from_secs(wait));
+            step(&format!("still running after {} s", started.elapsed().as_secs()));
+        }
+    });
 
+    step("prepare stack");
     horizon_game::prepare_main_stack();
     std::hint::black_box(&GAME_IDENTITY);
     if let Err(e) = hooks::register(&horizon_official_servers::HOOKS) {
@@ -64,5 +114,7 @@ fn main() {
             log::warn!("Horizon: mod links did not register: {e}");
         }
     }
+    step("game main");
     horizon_game::main();
+    step("game main returned");
 }

@@ -2228,6 +2228,7 @@ dependencies = [
  "horizon-game",
  "horizon-official-servers",
  "horizon-platform",
+ "libc",
  "log",
 ]
 

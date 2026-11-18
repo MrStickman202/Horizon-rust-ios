@@ -17,6 +17,7 @@ horizon-platform = { path = "../horizon-platform" }
 horizon-addresses = { path = "../horizon-addresses" }
 horizon-official-servers = { path = "../horizon-official-servers" }
 log = "0.4"
+libc = "0.2"
 
 [lints]
 workspace = true
