@@ -43,9 +43,9 @@ impl Marker {
         // Deliberately not temp_dir(): TMPDIR may be arbitrarily long or unsafe.
         // Endpoint::bind checks /tmp and every ancestor and creates a 0700 leaf
         // with exclusive mkdir, rejecting collisions rather than reusing anything.
-        #[cfg(target_os = "macos")]
+        #[cfg(target_vendor = "apple")]
         let fallback = "/private/tmp"; // /tmp is a symlink on macOS.
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(target_vendor = "apple"))]
         let fallback = "/tmp";
         Self::new(std::path::Path::new(fallback).join(name))
     }
@@ -179,7 +179,7 @@ fn check_directory(directory: &Dir, private: bool) -> io::Result<()> {
 fn peer(stream: &Stream) -> io::Result<()> {
     #[cfg(target_os = "linux")]
     let uid = rustix::net::sockopt::socket_peercred(stream)?.uid.as_raw();
-    #[cfg(target_os = "macos")]
+    #[cfg(target_vendor = "apple")]
     let uid = {
         use std::os::fd::AsRawFd;
         let (mut uid, mut gid) = (0, 0);
@@ -253,9 +253,9 @@ impl Drop for Endpoint {
 #[test]
 fn runtime_addresses_validate_candidates_and_exchange() {
     use std::os::unix::fs::{PermissionsExt, symlink};
-    #[cfg(target_os = "macos")]
+    #[cfg(target_vendor = "apple")]
     let fallback = "/private/tmp";
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(target_vendor = "apple"))]
     let fallback = "/tmp";
     let root = tempfile::tempdir_in(fallback).unwrap();
     let safe = root.path().canonicalize().unwrap().join("runtime");

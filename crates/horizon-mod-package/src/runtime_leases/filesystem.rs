@@ -3,7 +3,7 @@ use super::Error;
 use cap_std::fs::Dir;
 
 pub(super) fn local(directory: &Dir) -> Result<(), Error> {
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_vendor = "apple"))]
     {
         use std::{mem::MaybeUninit, os::fd::AsRawFd};
         let mut status = MaybeUninit::<libc::statfs>::zeroed();
@@ -17,7 +17,7 @@ pub(super) fn local(directory: &Dir) -> Result<(), Error> {
         // ext*, tmpfs, overlayfs, XFS, Btrfs, ZFS, ramfs, F2FS, FAT and exFAT. Unknown
         // implementations (including NFS, SMB and FUSE) must not silently inherit trust.
         let supported = supported_linux(status.f_type as u64);
-        #[cfg(target_os = "macos")]
+        #[cfg(target_vendor = "apple")]
         let supported = status.f_flags & libc::MNT_LOCAL as u32 != 0 && {
             // SAFETY: the kernel's fixed f_fstypename is NUL-terminated.
             let kind = unsafe { std::ffi::CStr::from_ptr(status.f_fstypename.as_ptr()) };
@@ -73,7 +73,7 @@ pub(super) fn local(directory: &Dir) -> Result<(), Error> {
             Err(Error::UnsupportedFilesystem)
         }
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+    #[cfg(not(any(target_os = "linux", target_vendor = "apple", windows)))]
     {
         let _ = directory;
         Err(Error::UnsupportedFilesystem)

@@ -112,6 +112,28 @@ pub fn helper_clipboard_contents(clipboard: &str) -> String {
     strip_formatting(&clipboard.replace('\r', ""))
 }
 
+/// iOS: arboard has no backend there, so no system clipboard is reached and text copied in the
+/// game is pasted in the game only.
+#[cfg(target_os = "ios")]
+mod arboard {
+    pub struct Clipboard;
+    pub enum Error {
+        ContentNotAvailable,
+        Unavailable,
+    }
+    impl Clipboard {
+        pub fn new() -> Result<Self, Error> {
+            Err(Error::Unavailable)
+        }
+        pub fn get_text(&mut self) -> Result<String, Error> {
+            Err(Error::ContentNotAvailable)
+        }
+        pub fn set_text(&mut self, _text: String) -> Result<(), Error> {
+            Err(Error::Unavailable)
+        }
+    }
+}
+
 /// A clipboard: the system's, or an in-memory one in tests.
 pub trait Clipboard {
     /// `KeyboardHandler.getClipboard`: empty when there is no text.

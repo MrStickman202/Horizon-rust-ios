@@ -46,7 +46,17 @@ pub fn prepare_main() {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+/// iOS: the app's main thread keeps the size iOS gives it, whatever the link settings ask for.
+/// The game itself runs there; only mods need the guest stack, and the iOS app runs none, so a
+/// smaller one is reported and not fatal.
+#[cfg(target_os = "ios")]
+fn prepare() -> std::io::Result<()> {
+    if let Err(error) = inspect_current() {
+        eprintln!("{error} (iOS: mods stay off)");
+    }
+    Ok(())
+}
+#[cfg(not(any(target_os = "linux", target_os = "ios")))]
 fn prepare() -> std::io::Result<()> {
     // Executable link settings reserve the same stack on Windows and macOS.
     inspect_current().map_err(std::io::Error::other)

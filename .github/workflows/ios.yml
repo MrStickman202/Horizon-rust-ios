@@ -1,0 +1,70 @@
+# Builds the unsigned iOS/iPadOS app (Horizon.ipa) for sideloading with SideStore, AltStore or TrollStore.
+# Built from a clean checkout: no player files, accounts or tokens can end up in it.
+name: iOS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust for iOS
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-apple-ios
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ios
+
+      - name: Build
+        run: |
+          set -a; . ios/config.env; set +a
+          export IPHONEOS_DEPLOYMENT_TARGET=15.0
+          cargo build --release --target aarch64-apple-ios -p horizon-ios
+
+      - name: Package Horizon.ipa
+        run: |
+          VERSION="0.1.${{ github.run_number }}"
+          APP=build/Payload/Horizon.app
+          mkdir -p "$APP"
+          cp target/aarch64-apple-ios/release/Horizon "$APP/Horizon"
+          sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/${{ github.run_number }}/" ios/Info.plist > "$APP/Info.plist"
+          plutil -lint "$APP/Info.plist"
+          # App icons from the macOS icon set.
+          sips -s format png packaging/icons/horizon.icns --out build/icon.png >/dev/null
+          for size in 60 76; do
+            sips -z $((size*2)) $((size*2)) build/icon.png --out "$APP/AppIcon${size}x${size}@2x.png" >/dev/null
+          done
+          sips -z 120 120 build/icon.png --out "$APP/AppIcon60x60@2x~ipad.png" >/dev/null || true
+          printf 'APPL????' > "$APP/PkgInfo"
+          # Fonts and licences ship with the theme crate; nothing of Mojang's is bundled.
+          (cd build && zip -qry ../Horizon.ipa Payload)
+          ls -lh Horizon.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Horizon-ipa
+          path: Horizon.ipa
+
+      - name: Publish the latest build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest Horizon.ipa --title "Horizon for iOS (latest build)" \
+            --notes "Unsigned build ${{ github.run_number }} from ${{ github.sha }}. Install with SideStore or AltStore. See ios/README.md." \
+            --prerelease

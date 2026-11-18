@@ -185,7 +185,10 @@ impl Options {
             .ok_or("missing executable directory")?
             .join("resources");
         let mut o = Self {
-            resources: if sibling.join("horizon-resources.json").exists() {
+            // HORIZON_RESOURCES: set by a host with no command line, such as the iOS app.
+            resources: if let Some(path) = std::env::var_os("HORIZON_RESOURCES") {
+                path.into()
+            } else if sibling.join("horizon-resources.json").exists() {
                 sibling
             } else {
                 std::path::Path::new(".local/horizon-client").join(horizon_core::VANILLA_VERSION)
