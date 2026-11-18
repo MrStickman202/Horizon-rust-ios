@@ -30,15 +30,40 @@ pub(crate) fn locked() -> bool {
     LOCKED.with(Cell::get)
 }
 
-/// The window locks or frees the pointer; locking hooks every connected mouse or trackpad.
+/// The window locks or frees the pointer. Every mouse or trackpad is hooked: those connected
+/// now, and those GameController reports later (it lists them only some time after the start).
 pub(crate) fn set_locked(window_id: RootWindowId, locked: bool) {
     LOCKED.with(|l| l.set(locked));
     WINDOW.with(|w| w.set(Some(window_id)));
-    if locked {
-        for mouse in unsafe { GCMouse::mice() }.to_vec_retained() {
-            hook(&mouse);
-        }
+    observe_connections();
+    hook_all();
+}
+
+fn hook_all() {
+    for mouse in unsafe { GCMouse::mice() }.to_vec_retained() {
+        hook(&mouse);
     }
+}
+
+fn observe_connections() {
+    thread_local! {
+        static OBSERVING: Cell<bool> = const { Cell::new(false) };
+    }
+    if OBSERVING.with(|o| o.replace(true)) {
+        return;
+    }
+    use objc2_foundation::{NSNotification, NSNotificationCenter, NSOperationQueue};
+    let connected = RcBlock::new(|_: NonNull<NSNotification>| hook_all());
+    let observer = unsafe {
+        NSNotificationCenter::defaultCenter().addObserverForName_object_queue_usingBlock(
+            Some(objc2_game_controller::GCMouseDidConnectNotification),
+            None,
+            Some(&NSOperationQueue::mainQueue()),
+            &connected,
+        )
+    };
+    // The observer stays for the life of the app.
+    std::mem::forget(observer);
 }
 
 fn send(event: EventWrapper) {

@@ -129,9 +129,35 @@ fn step(what: &str) {
     let _ = std::io::stderr().flush();
 }
 
+/// Sound plays like a game's: the Playback category, so it is heard with the iPad's silent
+/// mode on, and the session active before the game opens its audio output.
+#[cfg(target_os = "ios")]
+fn audio_session() {
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+    use objc2_foundation::NSString;
+    #[link(name = "AVFAudio", kind = "framework")]
+    unsafe extern "C" {}
+    // SAFETY: AVAudioSession's documented class methods, called on the main thread at start.
+    unsafe {
+        let session: *mut AnyObject = msg_send![class!(AVAudioSession), sharedInstance];
+        if session.is_null() {
+            step("audio: no audio session");
+            return;
+        }
+        let category = NSString::from_str("AVAudioSessionCategoryPlayback");
+        let none = std::ptr::null_mut::<*mut AnyObject>();
+        let set: bool = msg_send![session, setCategory: &*category, error: none];
+        let active: bool = msg_send![session, setActive: true, error: none];
+        step(&format!("audio: playback category {set}, active {active}"));
+    }
+}
+
 fn main() {
     let documents = documents();
     diagnostics(&documents);
+    #[cfg(target_os = "ios")]
+    audio_session();
     // The app starts in "/", which it can't write: the game keeps its files in the working
     // directory, and its logs and crash reports in HORIZON_HOME; both are Documents, so the
     // Files app shows them.

@@ -12,15 +12,24 @@ use crate::platform_impl::platform::DEVICE_ID;
 use crate::platform_impl::KeyEventExtra;
 use crate::window::WindowId as RootWindowId;
 
+thread_local! {
+    /// When a hardware key last typed text: UIKit may also hand the same character to the
+    /// view's `insertText:` while it takes text, which [`typed_by_key_just_now`] lets it skip.
+    static TYPED_AT: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
+}
+
+/// Whether a hardware key typed text in the last moment (the view skips its `insertText:`).
+pub(crate) fn typed_by_key_just_now() -> bool {
+    TYPED_AT.with(|t| t.get()).is_some_and(|at| at.elapsed() < std::time::Duration::from_millis(150))
+}
+
 /// The presses' keys as key events for `window_id`. Returns true when any press was a keyboard
-/// key (the caller doesn't pass those on). `with_text`: whether the events carry the typed text;
-/// false while the view takes text itself (`insertText:`), so a letter isn't typed twice.
+/// key (the caller doesn't pass those on). The events carry the typed text.
 pub(crate) fn handle_presses(
     mtm: MainThreadMarker,
     window_id: RootWindowId,
     presses: &NSSet<UIPress>,
     state: ElementState,
-    with_text: bool,
 ) -> bool {
     let mut events = Vec::new();
     for press in presses.iter() {
@@ -36,7 +45,7 @@ pub(crate) fn handle_presses(
             window_id,
             event: WindowEvent::KeyboardInput {
                 device_id: DEVICE_ID,
-                event: key_event(&key, state, with_text),
+                event: key_event(&key, state, true),
                 is_synthetic: false,
             },
         }));
@@ -69,11 +78,14 @@ fn key_event(key: &Retained<UIKey>, state: ElementState, with_text: bool) -> Key
             _ => Key::Unidentified(crate::keyboard::NativeKey::Unidentified),
         },
     };
-    let text = match (&logical_key, state) {
+    let text: Option<smol_str::SmolStr> = match (&logical_key, state) {
         (Key::Character(text), ElementState::Pressed) if with_text => Some(text.clone()),
         (Key::Named(NamedKey::Enter), ElementState::Pressed) if with_text => Some("\r".into()),
         _ => None,
     };
+    if state == ElementState::Pressed {
+        TYPED_AT.with(|t| t.set(Some(std::time::Instant::now())));
+    }
     KeyEvent {
         physical_key: code.map_or(
             PhysicalKey::Unidentified(crate::keyboard::NativeKeyCode::Unidentified),

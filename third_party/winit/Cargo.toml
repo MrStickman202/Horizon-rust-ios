@@ -424,6 +424,7 @@ features = [
     "NSEnumerator",
     "NSGeometry",
     "NSObjCRuntime",
+    "NSNotification",
     "NSOperation",
     "NSString",
     "NSProcessInfo",
@@ -448,6 +449,7 @@ features = [
 [target.'cfg(target_os = "ios")'.dependencies.objc2-ui-kit]
 version = "0.2.2"
 features = [
+    "UIHoverGestureRecognizer",
     "UICommand",
     "UIKey",
     "UIKeyConstants",

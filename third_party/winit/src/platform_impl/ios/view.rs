@@ -7,7 +7,8 @@ use objc2::{declare_class, msg_send, msg_send_id, mutability, sel, ClassType, De
 use objc2_foundation::{CGFloat, CGPoint, CGRect, MainThreadMarker, NSObject, NSSet, NSString};
 use objc2_ui_kit::{
     UICoordinateSpace, UIEvent, UIForceTouchCapability, UIGestureRecognizer,
-    UIGestureRecognizerDelegate, UIGestureRecognizerState, UIKeyInput, UIPanGestureRecognizer,
+    UIGestureRecognizerDelegate, UIGestureRecognizerState, UIHoverGestureRecognizer, UIKeyInput,
+    UIPanGestureRecognizer,
     UIPinchGestureRecognizer, UIResponder, UIRotationGestureRecognizer, UITapGestureRecognizer,
     UITextInputTraits, UITouch, UITouchPhase, UITouchType, UITraitEnvironment, UIView,
 };
@@ -317,6 +318,29 @@ declare_class!(
             app_state::handle_nonuser_event(mtm, gesture_event);
         }
 
+        // Horizon: a trackpad's or mouse's pointer moving over the view, no button down.
+        #[method(hoverGesture:)]
+        fn hover_gesture(&self, recognizer: &UIHoverGestureRecognizer) {
+            if POINTER_LOCKED.with(Cell::get) {
+                return;
+            }
+            let window = self.window().unwrap();
+            let point = unsafe { recognizer.locationInView(Some(self)) };
+            let scale = self.contentScaleFactor() as f64;
+            let position = PhysicalPosition::from_logical::<(f64, f64), f64>(
+                (point.x as _, point.y as _),
+                scale,
+            );
+            let mtm = MainThreadMarker::new().unwrap();
+            app_state::handle_nonuser_event(
+                mtm,
+                EventWrapper::StaticEvent(Event::WindowEvent {
+                    window_id: RootWindowId(window.id()),
+                    event: WindowEvent::CursorMoved { device_id: DEVICE_ID, position },
+                }),
+            );
+        }
+
         #[method(canBecomeFirstResponder)]
         fn can_become_first_responder(&self) -> bool {
             true
@@ -376,6 +400,16 @@ impl WinitView {
         if let Some(scale_factor) = window_attributes.platform_specific.scale_factor {
             this.setContentScaleFactor(scale_factor as _);
         }
+
+        // Horizon: the pointer's position while it hovers (iPadOS 13.4+).
+        let hover = unsafe {
+            UIHoverGestureRecognizer::initWithTarget_action(
+                mtm.alloc(),
+                Some(&this),
+                Some(sel!(hoverGesture:)),
+            )
+        };
+        this.addGestureRecognizer(&hover);
 
         this
     }
@@ -548,6 +582,10 @@ impl WinitView {
     }
 
     fn handle_insert_text(&self, text: &NSString) {
+        // Horizon: a hardware key's own key event already typed it.
+        if super::keyboard::typed_by_key_just_now() {
+            return;
+        }
         let window = self.window().unwrap();
         let window_id = RootWindowId(window.id());
         let mtm = MainThreadMarker::new().unwrap();
@@ -586,6 +624,10 @@ impl WinitView {
     }
 
     fn handle_delete_backward(&self) {
+        // Horizon: a hardware Backspace's own key event already deleted it.
+        if super::keyboard::typed_by_key_just_now() {
+            return;
+        }
         let window = self.window().unwrap();
         let window_id = RootWindowId(window.id());
         let mtm = MainThreadMarker::new().unwrap();

@@ -97,21 +97,10 @@ declare_class!(
 );
 
 impl WinitUIWindow {
-    /// The presses' keyboard keys as key events; true when there were any. While the view takes
-    /// text (the game's text field focused, `set_ime_allowed`), the text comes from it instead.
+    /// The presses' keyboard keys as key events; true when there were any.
     fn keyboard_presses(&self, presses: &NSSet<UIPress>, state: crate::event::ElementState) -> bool {
         let mtm = MainThreadMarker::new().unwrap();
-        let view_takes_text = self
-            .rootViewController()
-            .and_then(|controller| controller.view())
-            .is_some_and(|view| unsafe { view.isFirstResponder() });
-        super::keyboard::handle_presses(
-            mtm,
-            RootWindowId(self.id()),
-            presses,
-            state,
-            !view_takes_text,
-        )
+        super::keyboard::handle_presses(mtm, RootWindowId(self.id()), presses, state)
     }
 
     pub(crate) fn new(
@@ -223,9 +212,12 @@ impl Inner {
         self.window.setBounds(bounds);
     }
 
+    /// Horizon: the whole window, as `Resized` reports it (`layoutSubviews`). Upstream gives the
+    /// safe area here, so a surface sized from it was stretched over the full-screen layer.
     pub fn inner_size(&self) -> PhysicalSize<u32> {
         let scale_factor = self.scale_factor();
-        let safe_area = self.safe_area_screen_space();
+        let bounds = self.window.bounds();
+        let safe_area = self.rect_to_screen_space(bounds);
         let size = LogicalSize {
             width: safe_area.size.width as f64,
             height: safe_area.size.height as f64,
@@ -540,6 +532,9 @@ impl Window {
         window_attributes: WindowAttributes,
     ) -> Result<Window, RootOsError> {
         let mtm = event_loop.mtm;
+        // Horizon: a game played with a keyboard or trackpad gives iOS no touches, and the
+        // screen dimmed and locked mid-game; keep it on while the app is open.
+        unsafe { UIApplication::sharedApplication(mtm).setIdleTimerDisabled(true) };
 
         if window_attributes.min_inner_size.is_some() {
             warn!("`WindowAttributes::min_inner_size` is ignored on iOS");
@@ -792,7 +787,7 @@ impl From<&AnyObject> for WindowId {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct PlatformSpecificWindowAttributes {
     pub scale_factor: Option<f64>,
     pub valid_orientations: ValidOrientations,
@@ -800,4 +795,19 @@ pub struct PlatformSpecificWindowAttributes {
     pub prefers_status_bar_hidden: bool,
     pub preferred_status_bar_style: StatusBarStyle,
     pub preferred_screen_edges_deferring_system_gestures: ScreenEdge,
+}
+
+/// Horizon: a game's window by default, with the status bar hidden, the home indicator hidden
+/// until touched and the screen edges asking for a second swipe before the system gestures.
+impl Default for PlatformSpecificWindowAttributes {
+    fn default() -> Self {
+        Self {
+            scale_factor: None,
+            valid_orientations: Default::default(),
+            prefers_home_indicator_hidden: true,
+            prefers_status_bar_hidden: true,
+            preferred_status_bar_style: Default::default(),
+            preferred_screen_edges_deferring_system_gestures: ScreenEdge::ALL,
+        }
+    }
 }
