@@ -469,6 +469,7 @@ impl Game<'_> {
     /// What the pad draws over the HUD, last: the radial menu, then the pad's cursor or focus
     /// highlight and the on-screen keyboard over everything else (`draw_pad_cursor`).
     pub(in crate::game) fn draw_pad_over_hud(&self, batch: &mut horizon_client::hud::HudBatch) {
+        self.draw_touch_controls(batch);
         self.draw_pad_radial(batch);
         self.draw_pad_cursor(batch);
     }

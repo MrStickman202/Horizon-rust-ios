@@ -1612,6 +1612,8 @@ struct Game<'a> {
     recipe_ui: recipe_book::RecipeUi,
     /// The horse inventory (game/interface/mount_menu.rs).
     mount_menu: mount_menu::MountMenu,
+    /// Playing by touch: the on-screen controls and finger look (`touch_play`).
+    touch_play: touch_play::TouchPlay,
     /// The player's fishing hook.
     hook: horizon_client::join_seq::ResidentSlot<fishing::Hook>,
     /// The other players' hooks a server tracks to this client.
@@ -10990,6 +10992,7 @@ impl<'a> Game<'a> {
             spill: Default::default(),
             recipe_ui: Default::default(),
             mount_menu: Default::default(),
+            touch_play: Default::default(),
             hook: Default::default(),
             remote_hooks: Vec::new(),
             tridents: Default::default(),

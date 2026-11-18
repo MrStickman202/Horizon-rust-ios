@@ -40,6 +40,14 @@ pub fn load_or_create(dir: &Path) -> String {
     name
 }
 
+/// Keeps `name` in `dir` as the offline name (the iOS app's home screen sets it).
+pub fn save(dir: &Path, name: &str) -> std::io::Result<()> {
+    if !is_valid(name) {
+        return Err(std::io::ErrorKind::InvalidInput.into());
+    }
+    fs::write(dir.join(FILE), format!("{KEY}{name}\n"))
+}
+
 fn parse(text: &str) -> Option<String> {
     text.lines()
         .find_map(|line| line.trim_end_matches('\r').strip_prefix(KEY))

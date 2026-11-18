@@ -426,6 +426,16 @@ impl ApplicationHandler for Game<'_> {
         self.previous = Instant::now();
     }
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        // Playing by touch: fingers in a world go to the controls and the view; a key hides them.
+        match &event {
+            WindowEvent::Touch(touch) => {
+                if self.touch_event(touch) {
+                    return;
+                }
+            }
+            WindowEvent::KeyboardInput { .. } => self.touch_note_keyboard(),
+            _ => {}
+        }
         let key = if self.window.as_ref().is_some_and(|w| w.id() == id)
             && !self.scripted_run()
             && !self.unclaimed_window

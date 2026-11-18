@@ -290,6 +290,7 @@ pub(super) fn run_loading(
         title_drawn: false,
         menu,
         error: None,
+        launcher: ios_launcher::Launcher::at_start(),
     };
     let mut app = App::Loading(Box::new(loading));
     let result = EventLoop::new()?.run_app(&mut app);

@@ -77,6 +77,8 @@ pub(super) struct Loading {
     pub(super) title_drawn: bool,
     pub(super) menu: startup_menu::StartupMenu,
     pub(super) error: Option<Box<dyn std::error::Error>>,
+    /// iOS: the app's home screen, before the title (`ios_launcher`).
+    pub(super) launcher: Option<ios_launcher::Launcher>,
 }
 /// How long the handoff waits for the first title frame before building the
 /// world renderer anyway (a hidden window may never be asked to redraw).
@@ -86,6 +88,9 @@ impl Loading {
     /// the title is on the screen holds the title back by that build. Wait for
     /// one title frame first, unless a world is waiting to open.
     pub(super) fn ready_for_handoff(&self) -> bool {
+        self.launcher.is_none() && self.title_ready()
+    }
+    fn title_ready(&self) -> bool {
         self.title_drawn
             || self.menu.pending.is_some()
             || self.ui_at.is_none_or(|at| at.elapsed() >= TITLE_FRAME_WAIT)
@@ -202,6 +207,9 @@ impl Loading {
             return;
         }
         follow_keymap(&mut event);
+        if self.launcher_event(&event) {
+            return;
+        }
         if let Err(error) = self.menu_event(event_loop, event) {
             self.error = Some(error);
             event_loop.exit();
@@ -291,7 +299,9 @@ impl Loading {
             return;
         };
         let mut batch = HudBatch::new(size, self.settings.gui_scale_inputs());
-        self.draw_menu(&mut batch);
+        if !self.draw_launcher(&mut batch) {
+            self.draw_menu(&mut batch);
+        }
         self.menu.frame_drawn((batch.width, batch.height));
         let mut frame = loading_frame(&batch);
         frame.yaw = self.panorama_rotation.update(

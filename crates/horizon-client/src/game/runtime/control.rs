@@ -1396,7 +1396,7 @@ impl Game<'_> {
         Ok(())
     }
 
-    fn control_key_down(&mut self, key: KeyCode, raw: KeyCode) -> Result<()> {
+    pub(super) fn control_key_down(&mut self, key: KeyCode, raw: KeyCode) -> Result<()> {
         self.physical_keys.insert(key);
         // The window's shortcuts come before any screen, here too.
         if self.screenshot_shortcut(key, false) {
@@ -1425,7 +1425,7 @@ impl Game<'_> {
 
     /// `key ... up`: the script lets go. What it pressed as the keyboard's stand-in goes with it
     /// (a fixture's untagged press), and a controller's hold stays.
-    fn control_key_up(&mut self, key: KeyCode) {
+    pub(super) fn control_key_up(&mut self, key: KeyCode) {
         self.keys.release(&key, Source::Agent);
         self.keys.release(&key, Source::Keyboard);
     }

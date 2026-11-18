@@ -559,6 +559,8 @@ impl WinitView {
                     scale_factor as f64,
                 )
             };
+            // Horizon: a trackpad's or mouse's touch is the pointer only, not a finger.
+            if touch_type != UITouchType::IndirectPointer {
             touch_events.push(EventWrapper::StaticEvent(Event::WindowEvent {
                 window_id: RootWindowId(window.id()),
                 event: WindowEvent::Touch(Touch {
@@ -569,6 +571,7 @@ impl WinitView {
                     phase,
                 }),
             }));
+            }
             pointer_from_touch(
                 &mut touch_events,
                 RootWindowId(window.id()),
@@ -669,7 +672,7 @@ pub(crate) fn set_pointer_locked(locked: bool) {
 /// Added for Horizon: the first finger, or a trackpad or mouse on iPad, also works as a mouse
 /// pointer. Its touch moves the cursor and presses the left button while down, and its
 /// movement is reported as mouse motion. While the window has the pointer locked (a game
-/// looking around), only the motion is reported. Other fingers stay touches only.
+/// looking around), nothing is. Other fingers stay touches only.
 fn pointer_from_touch(
     events: &mut Vec<EventWrapper>,
     window_id: RootWindowId,
@@ -678,7 +681,17 @@ fn pointer_from_touch(
     at: PhysicalPosition<f64>,
 ) {
     use crate::event::{DeviceEvent, MouseButton};
-    let locked = POINTER_LOCKED.with(Cell::get);
+    // Locked (a game looking around): the game reads the fingers' touches itself, and a
+    // trackpad's or mouse's motion comes from GameController (`mouse.rs`).
+    if POINTER_LOCKED.with(Cell::get) {
+        if let Some((id, ..)) = POINTER_TOUCH.with(Cell::get) {
+            if id == touch_id && matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled) {
+                POINTER_TOUCH.with(|p| p.set(None));
+            }
+        }
+        return;
+    }
+    let locked = false;
     let mut window_event = |event| {
         if !locked {
             events.push(EventWrapper::StaticEvent(Event::WindowEvent { window_id, event }));
