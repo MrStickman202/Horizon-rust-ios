@@ -18,6 +18,8 @@ const BUTTON_GAP: f32 = 12.0;
 pub enum Action {
     /// Open the hook's page.
     Open(&'static str),
+    /// The screen's main action that ends it (iOS: the files are copied, reopen the app).
+    Done,
     Quit,
 }
 
@@ -35,6 +37,26 @@ impl NoResources {
     /// (`horizon_hooks::engine::get_the_game`).
     pub fn new(looked_in: &std::path::Path, get: Option<GetTheGame>) -> Self {
         let shown = std::path::absolute(looked_in).unwrap_or_else(|_| looked_in.to_path_buf());
+        // iOS: no launcher runs there; the player copies the files a computer prepared.
+        #[cfg(target_os = "ios")]
+        {
+            let _ = (&shown, get);
+            return Self {
+                title: lang::get("horizon.ios.files.title"),
+                paragraphs: [
+                    "horizon.ios.files.about",
+                    "horizon.ios.files.step1",
+                    "horizon.ios.files.step2",
+                    "horizon.ios.files.step3",
+                ]
+                .iter()
+                .map(|key| lang::get(key))
+                .collect(),
+                buttons: vec![(lang::get("horizon.ios.files.done"), Action::Done)],
+                looked_in: lang::get("horizon.ios.files.where"),
+            };
+        }
+        #[allow(unreachable_code)]
         let quit = (lang::get("horizon.no_resources.quit"), Action::Quit);
         let (title, paragraphs, buttons) = match get {
             Some(get) => {
@@ -134,8 +156,8 @@ impl NoResources {
         for button in &layout.buttons {
             let hovered = button.contains(ui.cursor);
             let (plate, ink) = match (button.action, hovered) {
-                (Action::Open(_), false) => (color::accent(), color::on_accent()),
-                (Action::Open(_), true) => {
+                (Action::Open(_) | Action::Done, false) => (color::accent(), color::on_accent()),
+                (Action::Open(_) | Action::Done, true) => {
                     (color::with_alpha(color::accent(), 0.85), color::on_accent())
                 }
                 (Action::Quit, false) => (color::raised(), color::text()),

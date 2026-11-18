@@ -92,7 +92,12 @@ impl Missing {
         let mut batch = HudBatch::new(self.size(), self.settings.gui_scale_inputs());
         match self.with_ui(&mut batch, |ui| self.screen.click(ui)) {
             Some(Action::Open(address)) => packs::open_uri(address),
-            Some(Action::Quit) => event_loop.exit(),
+            // iOS: the app can't end its own event loop and start the game in a new one, so
+            // the player opens it again once the files are there.
+            #[cfg(target_os = "ios")]
+            Some(Action::Done | Action::Quit) => std::process::exit(0),
+            #[cfg(not(target_os = "ios"))]
+            Some(Action::Done | Action::Quit) => event_loop.exit(),
             None => {}
         }
     }
@@ -157,6 +162,14 @@ impl ApplicationHandler for Missing {
                 button: MouseButton::Left,
                 ..
             } => self.click(event_loop),
+            // A tap: the button under the finger when it lifts.
+            WindowEvent::Touch(touch) => {
+                self.pointer = (touch.location.x, touch.location.y);
+                if touch.phase == winit::event::TouchPhase::Ended {
+                    self.click(event_loop);
+                }
+                window.request_redraw();
+            }
             WindowEvent::KeyboardInput { event, .. }
                 if event.state == ElementState::Pressed
                     && event.physical_key == PhysicalKey::Code(KeyCode::Escape) =>

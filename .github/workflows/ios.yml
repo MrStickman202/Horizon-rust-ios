@@ -34,14 +34,15 @@ jobs:
         run: |
           set -a; . ios/config.env; set +a
           export IPHONEOS_DEPLOYMENT_TARGET=15.0
-          cargo build --release --target aarch64-apple-ios -p horizon-ios
+          # `fast`: optimized, without the release profile's single codegen unit and LTO (much quicker to build).
+          cargo build --profile fast --target aarch64-apple-ios -p horizon-ios
 
       - name: Package Horizon.ipa
         run: |
           VERSION="0.1.${{ github.run_number }}"
           APP=build/Payload/Horizon.app
           mkdir -p "$APP"
-          cp target/aarch64-apple-ios/release/Horizon "$APP/Horizon"
+          cp target/aarch64-apple-ios/fast/Horizon "$APP/Horizon"
           sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/${{ github.run_number }}/" ios/Info.plist > "$APP/Info.plist"
           plutil -lint "$APP/Info.plist"
           # App icons from the macOS icon set.

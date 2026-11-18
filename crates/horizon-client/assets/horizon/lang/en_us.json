@@ -1,4 +1,11 @@
 {
+  "horizon.ios.files.title": "Add your game files",
+  "horizon.ios.files.about": "Horizon plays your own Minecraft: Java Edition. Its game files are prepared once on a computer, then copied here.",
+  "horizon.ios.files.step1": "1. On your Mac or PC, press Play once in the Horizon launcher.",
+  "horizon.ios.files.step2": "2. Copy the prepared 26.3 folder to this device, with AirDrop or Finder.",
+  "horizon.ios.files.step3": "3. In the Files app, move it into On My iPad › Horizon, then open Horizon again.",
+  "horizon.ios.files.where": "Horizon looks for: Files › On My iPad › Horizon › 26.3",
+  "horizon.ios.files.done": "Close Horizon",
   "horizon.no_resources.title": "No prepared game files",
   "horizon.no_resources.prepare": "Prepare them with horizon-prepare --prepare, or pass --resources <folder>.",
   "horizon.no_resources.looked_in": "No prepared game files in %s",
