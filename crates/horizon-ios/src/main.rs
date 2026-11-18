@@ -38,6 +38,50 @@ fn documents() -> PathBuf {
         .join("Documents")
 }
 
+/// The prepared resources: `Documents/26.3`, or else the first folder in Documents (three
+/// levels down at most) holding a `horizon-resources.json`, so a folder copied one level too
+/// deep (`Horizon/26.3/26.3`) or under another name still opens.
+fn find_resources(documents: &Path) -> PathBuf {
+    const MANIFEST: &str = "horizon-resources.json";
+    let expected = documents.join("26.3");
+    if expected.join(MANIFEST).is_file() {
+        return expected;
+    }
+    let mut level = vec![documents.to_path_buf()];
+    for _ in 0..3 {
+        let mut next = Vec::new();
+        for dir in level {
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            let mut dirs: Vec<PathBuf> = entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .filter(|p| !p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.')))
+                .collect();
+            dirs.sort();
+            for dir in dirs {
+                if dir.join(MANIFEST).is_file() {
+                    return dir;
+                }
+                next.push(dir);
+            }
+        }
+        level = next;
+    }
+    // Say what is there, for the start log: the usual mistake is Minecraft's own 26.3 folder.
+    if let Ok(entries) = std::fs::read_dir(&expected) {
+        let names: Vec<String> = entries
+            .flatten()
+            .take(20)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        step(&format!("26.3 holds: {}", names.join(", ")));
+    }
+    expected
+}
+
 fn set(name: &str, value: &Path) {
     if std::env::var_os(name).is_none() {
         // SAFETY: called at the very start of `main`, before the game starts any thread.
@@ -93,7 +137,9 @@ fn main() {
     // Files app shows them.
     let _ = std::env::set_current_dir(&documents);
     set("HORIZON_HOME", &documents);
-    set("HORIZON_RESOURCES", &documents.join("26.3"));
+    let resources = find_resources(&documents);
+    step(&format!("resources: {}", resources.display()));
+    set("HORIZON_RESOURCES", &resources);
     // A watchdog: a start stuck before its first frame still says how long it has been alive.
     std::thread::spawn(|| {
         let started = std::time::Instant::now();

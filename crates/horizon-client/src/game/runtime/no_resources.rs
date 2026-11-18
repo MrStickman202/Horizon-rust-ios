@@ -95,7 +95,10 @@ impl Missing {
             // iOS: the app can't end its own event loop and start the game in a new one, so
             // the player opens it again once the files are there.
             #[cfg(target_os = "ios")]
-            Some(Action::Done | Action::Quit) => std::process::exit(0),
+            Some(Action::Done | Action::Quit) => {
+                let _ = event_loop;
+                std::process::exit(0)
+            }
             #[cfg(not(target_os = "ios"))]
             Some(Action::Done | Action::Quit) => event_loop.exit(),
             None => {}
@@ -109,8 +112,10 @@ impl ApplicationHandler for Missing {
             return;
         }
         let attributes =
-            horizon_client::window::with_icon(Window::default_attributes().with_title("Horizon"))
-                .with_inner_size(winit::dpi::LogicalSize::new(1040.0, 700.0));
+            horizon_client::window::with_icon(Window::default_attributes().with_title("Horizon"));
+        // iOS: the window is the whole screen; a size would leave the rest of it black.
+        #[cfg(not(target_os = "ios"))]
+        let attributes = attributes.with_inner_size(winit::dpi::LogicalSize::new(1040.0, 700.0));
         let made = event_loop
             .create_window(attributes)
             .map_err(Into::into)
@@ -184,6 +189,12 @@ impl ApplicationHandler for Missing {
         if horizon_threads::stop_requests() > 0 {
             event_loop.exit();
             return;
+        }
+        // iOS shows a frame only once the screen asks for one, and nothing asks at the start:
+        // draw again at each wake.
+        #[cfg(target_os = "ios")]
+        if let Some(window) = &self.window {
+            window.request_redraw();
         }
         // Wake now and then for Ctrl+C in the console; redraws come with events.
         event_loop.set_control_flow(ControlFlow::WaitUntil(
