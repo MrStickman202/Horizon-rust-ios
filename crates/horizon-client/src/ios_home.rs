@@ -20,6 +20,28 @@ pub enum Hit {
     Play,
 }
 
+/// Whether a home screen holds the game's loading back, and whether Play was pressed.
+static GATE: std::sync::Mutex<(bool, bool)> = std::sync::Mutex::new((false, false));
+static OPENED: std::sync::Condvar = std::sync::Condvar::new();
+
+/// The resource loader's first step: while a home screen shows, it waits for Play. Nothing
+/// loads (no CPU, no heat) until the player starts the game.
+pub fn wait_for_play() {
+    let mut gate = GATE.lock().unwrap_or_else(|e| e.into_inner());
+    while gate.0 && !gate.1 {
+        gate = OPENED.wait(gate).unwrap_or_else(|e| e.into_inner());
+    }
+}
+
+fn hold_loading() {
+    GATE.lock().unwrap_or_else(|e| e.into_inner()).0 = true;
+}
+
+fn open_gate() {
+    GATE.lock().unwrap_or_else(|e| e.into_inner()).1 = true;
+    OPENED.notify_all();
+}
+
 pub struct Launcher {
     name: String,
     /// The name being typed, while the field is open.
@@ -52,6 +74,7 @@ impl Launcher {
         if !cfg!(target_os = "ios") {
             return None;
         }
+        hold_loading();
         Some(Self {
             name: crate::offline_name::load_or_create(&crate::logging::player_dir()),
             editing: None,
@@ -143,11 +166,8 @@ impl Launcher {
         let hovered = inside(l.play, ui.cursor);
         let plate = if hovered { color::with_alpha(color::accent(), 0.85) } else { color::accent() };
         ui.rounded(px, py, pw, ph, ph / 2.0, plate);
-        let play = crate::lang::get(if ready {
-            "horizon.ios.home.play"
-        } else {
-            "horizon.ios.home.play_loading"
-        });
+        let _ = ready;
+        let play = crate::lang::get("horizon.ios.home.play");
         let lw = ui.measure(Face::Medium, s.ui, &play);
         ui.text_line(Face::Medium, s.ui, ph, px + ((pw - lw) / 2.0).round(), py, color::on_accent(), &play);
         let _ = l.width;
@@ -222,6 +242,7 @@ impl Launcher {
                     matches!(event.physical_key, PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter))
                         && {
                             self.commit(window);
+                            open_gate();
                             true
                         }
                 }
@@ -256,6 +277,7 @@ impl Launcher {
             }
             Some(Hit::Play) => {
                 self.commit(window);
+                open_gate();
                 true
             }
             None => {

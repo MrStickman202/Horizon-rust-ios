@@ -415,6 +415,8 @@ pub(super) fn spawn_loader(
     let handle = horizon_guest_stack::builder()
         .name("resource-loader".into())
         .spawn(move || {
+            // iOS: nothing loads while the home screen shows; Play starts it.
+            horizon_client::ios_home::wait_for_play();
             let mut pack_error = None;
             let root =
                 packs::startup_root(&vanilla_root, &settings.resource_packs, &[], &mod_sources)

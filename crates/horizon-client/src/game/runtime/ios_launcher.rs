@@ -36,6 +36,18 @@ impl Loading {
 
     /// A window event for the home screen; false when it is closed (the menu takes it).
     pub(super) fn launcher_event(&mut self, event: &WindowEvent) -> bool {
+        // Only input: redraws, resizes and the rest go on to the loading window as before.
+        if !matches!(
+            event,
+            WindowEvent::CursorMoved { .. }
+                | WindowEvent::MouseInput { .. }
+                | WindowEvent::MouseWheel { .. }
+                | WindowEvent::KeyboardInput { .. }
+                | WindowEvent::Touch(_)
+                | WindowEvent::Ime(_)
+        ) {
+            return false;
+        }
         let Some(mut launcher) = self.launcher.take() else {
             return false;
         };

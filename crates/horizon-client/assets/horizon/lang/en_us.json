@@ -21,7 +21,6 @@
   "horizon.ios.home.offline": "Not signed in: you play offline, and join offline-mode servers and LAN worlds.",
   "horizon.ios.home.sign_in_soon": "Sign-in comes in a later update, once Mojang approves the app.",
   "horizon.ios.home.play": "Play",
-  "horizon.ios.home.play_loading": "Play (still loading)",
   "horizon.ios.files.title": "Add your game files",
   "horizon.ios.files.about": "Horizon plays your own Minecraft: Java Edition. Its game files are prepared once on a computer, then copied here.",
   "horizon.ios.files.step1": "1. On your Mac or PC, press Play once in the Horizon launcher.",
