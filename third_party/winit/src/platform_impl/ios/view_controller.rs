@@ -35,6 +35,12 @@ declare_class!(
     }
 
     unsafe impl WinitViewController {
+        // Horizon: the pointer is locked while the game looks around (`set_cursor_grab`).
+        #[method(prefersPointerLocked)]
+        fn prefers_pointer_locked(&self) -> bool {
+            super::mouse::locked()
+        }
+
         #[method(shouldAutorotate)]
         fn should_autorotate(&self) -> bool {
             true

@@ -431,6 +431,20 @@ features = [
     "NSSet",
 ]
 
+[target.'cfg(target_os = "ios")'.dependencies.objc2-game-controller]
+version = "0.2.2"
+features = [
+    "block2",
+    "GCControllerButtonInput",
+    "GCControllerDirectionPad",
+    "GCControllerElement",
+    "GCDevice",
+    "GCDeviceCursor",
+    "GCMouse",
+    "GCMouseInput",
+    "GCPhysicalInputProfile",
+]
+
 [target.'cfg(target_os = "ios")'.dependencies.objc2-ui-kit]
 version = "0.2.2"
 features = [

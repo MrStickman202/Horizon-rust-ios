@@ -296,8 +296,21 @@ impl Inner {
         Err(ExternalError::NotSupported(NotSupportedError::new()))
     }
 
-    pub fn set_cursor_grab(&self, _: CursorGrabMode) -> Result<(), ExternalError> {
-        Err(ExternalError::NotSupported(NotSupportedError::new()))
+    /// Horizon: `Locked` is accepted. iOS has no pointer to lock, but while it is "locked" the
+    /// pointer touch reports only mouse motion (looking around), no clicks or cursor moves.
+    pub fn set_cursor_grab(&self, mode: CursorGrabMode) -> Result<(), ExternalError> {
+        let locked = match mode {
+            CursorGrabMode::Locked => true,
+            CursorGrabMode::None => false,
+            CursorGrabMode::Confined => {
+                return Err(ExternalError::NotSupported(NotSupportedError::new()))
+            }
+        };
+        super::view::set_pointer_locked(locked);
+        super::mouse::set_locked(RootWindowId(self.window.id()), locked);
+        // iPadOS locks a trackpad's or mouse's pointer while the controller prefers it.
+        let _: () = unsafe { msg_send![&self.view_controller, setNeedsUpdateOfPrefersPointerLocked] };
+        Ok(())
     }
 
     pub fn set_cursor_visible(&self, _visible: bool) {

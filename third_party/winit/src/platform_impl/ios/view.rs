@@ -535,6 +535,13 @@ impl WinitView {
                     phase,
                 }),
             }));
+            pointer_from_touch(
+                &mut touch_events,
+                RootWindowId(window.id()),
+                touch_id,
+                phase,
+                physical_location,
+            );
         }
         let mtm = MainThreadMarker::new().unwrap();
         app_state::handle_nonuser_events(mtm, touch_events);
@@ -603,5 +610,72 @@ impl WinitView {
                 })
             }),
         );
+    }
+}
+
+thread_local! {
+    /// The touch that drives the pointer (Horizon): its id and last position.
+    static POINTER_TOUCH: Cell<Option<(u64, f64, f64)>> = const { Cell::new(None) };
+    /// Whether the window "locked" the pointer (`set_cursor_grab(Locked)`).
+    static POINTER_LOCKED: Cell<bool> = const { Cell::new(false) };
+}
+
+pub(crate) fn set_pointer_locked(locked: bool) {
+    POINTER_LOCKED.with(|l| l.set(locked));
+}
+
+/// Added for Horizon: the first finger, or a trackpad or mouse on iPad, also works as a mouse
+/// pointer. Its touch moves the cursor and presses the left button while down, and its
+/// movement is reported as mouse motion. While the window has the pointer locked (a game
+/// looking around), only the motion is reported. Other fingers stay touches only.
+fn pointer_from_touch(
+    events: &mut Vec<EventWrapper>,
+    window_id: RootWindowId,
+    touch_id: u64,
+    phase: TouchPhase,
+    at: PhysicalPosition<f64>,
+) {
+    use crate::event::{DeviceEvent, MouseButton};
+    let locked = POINTER_LOCKED.with(Cell::get);
+    let mut window_event = |event| {
+        if !locked {
+            events.push(EventWrapper::StaticEvent(Event::WindowEvent { window_id, event }));
+        }
+    };
+    let moved = || WindowEvent::CursorMoved { device_id: DEVICE_ID, position: at };
+    let button = |state| WindowEvent::MouseInput {
+        device_id: DEVICE_ID,
+        state,
+        button: MouseButton::Left,
+    };
+    let current = POINTER_TOUCH.with(Cell::get);
+    let mut motion = None;
+    match phase {
+        TouchPhase::Started if current.is_none() => {
+            POINTER_TOUCH.with(|p| p.set(Some((touch_id, at.x, at.y))));
+            window_event(moved());
+            window_event(button(ElementState::Pressed));
+        }
+        TouchPhase::Moved => {
+            if let Some((id, x, y)) = current.filter(|(id, ..)| *id == touch_id) {
+                POINTER_TOUCH.with(|p| p.set(Some((id, at.x, at.y))));
+                window_event(moved());
+                motion = Some((at.x - x, at.y - y));
+            }
+        }
+        TouchPhase::Ended | TouchPhase::Cancelled => {
+            if current.is_some_and(|(id, ..)| id == touch_id) {
+                POINTER_TOUCH.with(|p| p.set(None));
+                window_event(moved());
+                window_event(button(ElementState::Released));
+            }
+        }
+        _ => {}
+    }
+    if let Some(delta) = motion {
+        events.push(EventWrapper::StaticEvent(Event::DeviceEvent {
+            device_id: DEVICE_ID,
+            event: DeviceEvent::MouseMotion { delta },
+        }));
     }
 }

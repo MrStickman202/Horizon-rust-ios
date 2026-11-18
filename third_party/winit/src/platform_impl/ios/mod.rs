@@ -3,6 +3,7 @@
 mod app_state;
 mod event_loop;
 mod keyboard;
+mod mouse;
 mod monitor;
 mod notification_center;
 mod view;
