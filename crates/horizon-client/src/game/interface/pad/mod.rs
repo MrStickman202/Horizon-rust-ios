@@ -205,6 +205,20 @@ mod hardware {
 
     impl Pads {
         pub(super) fn read(&mut self) -> PadState {
+            // iOS: gilrs has no backend there; the GameController framework reads the pad.
+            #[cfg(target_os = "ios")]
+            if let Some(pad) = winit::platform::ios::gamepad() {
+                let mut state = PadState {
+                    left: pad.left,
+                    right: pad.right,
+                    triggers: pad.triggers,
+                    ..PadState::default()
+                };
+                for (button, down) in horizon_client::gamepad::Button::ALL.into_iter().zip(pad.buttons) {
+                    state.set(button, down);
+                }
+                return state;
+            }
             PadState::default()
         }
         pub(in crate::game) fn release_hardware(&mut self) {}
@@ -282,6 +296,10 @@ impl Pads {
         edges
     }
 
+    /// The whole virtual pad: Horizon's own touch controls (`touch_play`) drive it.
+    pub(super) fn inject_state(&mut self, state: PadState) {
+        self.injected = state;
+    }
     /// A replay's pad button, in place of `pad`'s line.
     pub(super) fn inject_button(&mut self, button: Button, down: bool) {
         self.injected.set(button, down);

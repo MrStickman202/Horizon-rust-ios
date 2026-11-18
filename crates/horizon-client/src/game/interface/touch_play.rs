@@ -50,7 +50,12 @@ pub(super) struct TouchPlay {
     sneaking: bool,
     /// The layout, read from `horizon-touch.txt` at the first touch.
     scheme: Option<Scheme>,
+    /// Horizon's own touch controls, for [`Scheme::Horizon`], with their saved layout.
+    horizon: Option<Box<horizon_client_render::touch::TouchControls>>,
 }
+
+/// Horizon's own touch controls keep their layout here, beside `options.txt`.
+const HORIZON_LAYOUT: &str = "horizon-touch-layout.json";
 
 fn key_of(control: Control) -> Option<KeyCode> {
     Some(match control {
@@ -117,9 +122,12 @@ impl Game<'_> {
         if self.touch_play.scheme.is_none() {
             self.touch_play.scheme = Some(Scheme::load(&horizon_client::logging::player_dir()));
         }
-        let Some((_, density, _)) = self.touch_metrics() else {
+        let Some((physical, density, _)) = self.touch_metrics() else {
             return false;
         };
+        if self.touch_scheme() == Scheme::Horizon {
+            return self.touch_event_horizon(touch, physical);
+        }
         let at = [touch.location.x as f32 / density, touch.location.y as f32 / density];
         let id = touch.id;
         let look = Role::Look {
@@ -213,8 +221,80 @@ impl Game<'_> {
         true
     }
 
+    /// [`Scheme::Horizon`]: the finger goes to Horizon's own touch controls, which turn it into
+    /// the virtual controller's state, a camera turn and requests (chat).
+    fn touch_event_horizon(&mut self, touch: &Touch, physical: [f32; 2]) -> bool {
+        use horizon_client_render::touch::{Settings, TouchControls, camera_delta, hotbar_slot};
+        if self.touch_keyboard_quiet() {
+            self.touch_play.shown = true;
+        }
+        if !self.touch_play.shown {
+            return false;
+        }
+        // GUI px per physical px, for the hotbar.
+        let gui = self.touch_metrics().map_or(1.0, |(_, d, g)| g * d);
+        let controls = self.touch_play.horizon.get_or_insert_with(|| {
+            let mut controls = TouchControls::default();
+            controls.settings =
+                Settings::load(&horizon_client::logging::player_dir().join(HORIZON_LAYOUT));
+            Box::new(controls)
+        });
+        let (w, h) = (physical[0].max(1.0), physical[1].max(1.0));
+        controls.viewport(w as u32, h as u32);
+        let point = [touch.location.x as f32 / w, touch.location.y as f32 / h];
+        let started = touch.phase == TouchPhase::Started;
+        let ended = matches!(touch.phase, TouchPhase::Ended | TouchPhase::Cancelled);
+        // A tap on the hotbar picks the slot, as on Bedrock.
+        if started && controls.control_at(point).is_none() {
+            let gui_point = [touch.location.x as f32 / gui, touch.location.y as f32 / gui];
+            if let Some(slot) = hotbar_slot(w / gui, h / gui, gui_point) {
+                controls.ignore(touch.id);
+                let _ = self.select_hotbar_slot(slot as u8);
+                return true;
+            }
+        }
+        let turn = controls.update(touch.id, point, started, ended);
+        if turn != [0.0, 0.0] {
+            let [yaw, pitch] = camera_delta(turn, w as u32, h as u32, &controls.settings);
+            self.look_turn(f64::from(yaw) / 0.15, f64::from(pitch) / 0.15);
+            self.last_input = Instant::now();
+        }
+        true
+    }
+
+    /// [`Scheme::Horizon`], each pass of the loop: the controls' controller state reaches the
+    /// game, and their taps and requests act.
+    fn touch_tick_horizon(&mut self) {
+        let playing = self.touch_playing();
+        let Some(controls) = self.touch_play.horizon.as_mut() else {
+            return;
+        };
+        if !playing || !self.touch_play.shown {
+            controls.clear();
+            self.pad.inject_state(Default::default());
+            return;
+        }
+        let state = controls.poll_state();
+        let tap = controls.take_tap();
+        let chat = std::mem::take(&mut controls.chat_requested);
+        controls.key_events();
+        self.pad.inject_state(state);
+        if tap.is_some() {
+            let _ = self.play_mouse(MouseButton::Right, true);
+            let _ = self.play_mouse(MouseButton::Right, false);
+        }
+        if chat {
+            let _ = self.control_key_down(KeyCode::KeyT, KeyCode::KeyT);
+            self.control_key_up(KeyCode::KeyT);
+        }
+    }
+
     /// Each pass of the loop: a finger held still on the world long enough starts breaking.
     pub(super) fn touch_tick(&mut self) {
+        if self.touch_scheme() == Scheme::Horizon {
+            self.touch_tick_horizon();
+            return;
+        }
         if !self.touch_play.shown || !self.touch_scheme().taps_the_world() {
             return;
         }
@@ -332,6 +412,12 @@ impl Game<'_> {
     /// The controls over the HUD, while they show in a world.
     pub(in crate::game) fn draw_touch_controls(&self, batch: &mut HudBatch) {
         if !self.touch_play.shown || !self.touch_playing() {
+            return;
+        }
+        if self.touch_scheme() == Scheme::Horizon {
+            if let Some(controls) = &self.touch_play.horizon {
+                controls.draw(batch, &self.gui.atlas);
+            }
             return;
         }
         let Some(layout) = self.touch_layout() else {

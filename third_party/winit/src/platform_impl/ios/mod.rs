@@ -2,6 +2,7 @@
 
 mod app_state;
 mod event_loop;
+pub(crate) mod gamepad;
 mod keyboard;
 mod mouse;
 mod monitor;

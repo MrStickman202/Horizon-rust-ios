@@ -2,6 +2,7 @@
   "horizon.touch.scheme.joystick": "Joystick, tap to interact",
   "horizon.touch.scheme.crosshair": "Joystick and crosshair",
   "horizon.touch.scheme.dpad": "D-pad, tap to interact",
+  "horizon.touch.scheme.horizon": "Horizon touch controls",
   "horizon.ios.home.touch": "Touch controls",
   "horizon.ios.home.version": "Minecraft: Java Edition %s",
   "horizon.ios.home.name": "Offline name",

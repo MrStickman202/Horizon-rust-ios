@@ -16,17 +16,21 @@ pub enum Scheme {
     Crosshair,
     /// Four arrow buttons; tap to use, hold to break.
     DPad,
+    /// Horizon's own touch controls (from the Starling Android port: `horizon_client_render::touch`),
+    /// with its layout file and its gestures.
+    Horizon,
 }
 
 const FILE: &str = "horizon-touch.txt";
 
 impl Scheme {
-    pub const ALL: [Scheme; 3] = [Scheme::Joystick, Scheme::Crosshair, Scheme::DPad];
+    pub const ALL: [Scheme; 4] = [Scheme::Joystick, Scheme::Crosshair, Scheme::DPad, Scheme::Horizon];
     fn key(self) -> &'static str {
         match self {
             Scheme::Joystick => "joystick",
             Scheme::Crosshair => "crosshair",
             Scheme::DPad => "dpad",
+            Scheme::Horizon => "horizon",
         }
     }
     /// Its name in the current language.
@@ -35,6 +39,7 @@ impl Scheme {
             Scheme::Joystick => "horizon.touch.scheme.joystick",
             Scheme::Crosshair => "horizon.touch.scheme.crosshair",
             Scheme::DPad => "horizon.touch.scheme.dpad",
+            Scheme::Horizon => "horizon.touch.scheme.horizon",
         })
     }
     pub fn next(self) -> Self {

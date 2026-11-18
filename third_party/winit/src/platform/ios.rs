@@ -433,3 +433,11 @@ pub enum StatusBarStyle {
     LightContent,
     DarkContent,
 }
+
+/// Added for Horizon: the current game controller's state (GameController framework), if any.
+pub use crate::platform_impl::gamepad::Gamepad;
+
+/// Added for Horizon: reads the current game controller, if one is connected.
+pub fn gamepad() -> Option<Gamepad> {
+    crate::platform_impl::gamepad::read()
+}

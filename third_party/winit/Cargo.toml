@@ -436,9 +436,12 @@ features = [
 version = "0.2.2"
 features = [
     "block2",
+    "GCController",
+    "GCControllerAxisInput",
     "GCControllerButtonInput",
     "GCControllerDirectionPad",
     "GCControllerElement",
+    "GCExtendedGamepad",
     "GCDevice",
     "GCDeviceCursor",
     "GCMouse",
