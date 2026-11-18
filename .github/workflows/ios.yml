@@ -19,7 +19,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Rust for iOS
         run: |
@@ -55,7 +55,7 @@ jobs:
           (cd build && zip -qry ../Horizon.ipa Payload)
           ls -lh Horizon.ipa
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Horizon-ipa
           path: Horizon.ipa
