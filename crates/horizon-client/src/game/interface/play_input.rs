@@ -477,7 +477,7 @@ impl Game<'_> {
 impl Game<'_> {
     /// The analog move vector (`[left, forward]`, -1..1) while a device moves the player.
     pub(super) fn input_move(&self) -> Option<[f32; 2]> {
-        self.pad_move()
+        self.touch_move().or_else(|| self.pad_move())
     }
 
     /// Whether a device holds the key mapping named `mapping` (`key.use`).
