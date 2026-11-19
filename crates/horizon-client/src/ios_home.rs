@@ -48,8 +48,8 @@ pub struct Launcher {
     editing: Option<String>,
     /// The pointer in physical pixels.
     pub pointer: (f64, f64),
-    /// A line under the account row after Sign in.
-    note: Option<String>,
+    /// The Microsoft account: kept in the Keychain, or a sign-in under way.
+    account: crate::ms_sign_in::SignIn,
     /// The on-screen controls' layout (`touch_controls`).
     scheme: Scheme,
 }
@@ -79,7 +79,7 @@ impl Launcher {
             name: crate::offline_name::load_or_create(&crate::logging::player_dir()),
             editing: None,
             pointer: (0.0, 0.0),
-            note: None,
+            account: crate::ms_sign_in::SignIn::at_start(),
             scheme: Scheme::load(&crate::logging::player_dir()),
         })
     }
@@ -145,10 +145,24 @@ impl Launcher {
         let [bx, by, bw, bh] = l.sign_in;
         let hovered = inside(l.sign_in, ui.cursor);
         ui.rounded(bx, by, bw, bh, bh / 2.0, if hovered { color::hover() } else { color::raised() });
-        let sign_in = crate::lang::get("horizon.ios.home.sign_in");
+        use crate::ms_sign_in::State;
+        let (button, note) = match self.account.state() {
+            State::SignedOut => ("horizon.ios.home.sign_in", crate::lang::get("horizon.ios.home.offline")),
+            State::Failed(error) => ("horizon.ios.home.sign_in", error),
+            State::Starting => ("horizon.ios.home.cancel", crate::lang::get("horizon.ios.home.starting")),
+            State::Code { code, uri } => {
+                let site = uri.split_once("://").map_or(uri.as_str(), |(_, rest)| rest).to_owned();
+                ("horizon.ios.home.open_link", crate::lang::tr("horizon.ios.home.code", &[&code, &site]))
+            }
+            State::Working(message) => ("horizon.ios.home.cancel", message),
+            State::SignedIn(account) => (
+                "horizon.ios.home.sign_out",
+                crate::lang::tr("horizon.ios.home.signed_in", &[&account.name]),
+            ),
+        };
+        let sign_in = crate::lang::get(button);
         let lw = ui.measure(Face::Medium, s.ui, &sign_in);
         ui.text_line(Face::Medium, s.ui, bh, bx + ((bw - lw) / 2.0).round(), by, color::text(), &sign_in);
-        let note = self.note.clone().unwrap_or_else(|| crate::lang::get("horizon.ios.home.offline"));
         ui.text_line(Face::Regular, s.caption, 18.0, bx, by + bh + 8.0, color::muted(), &note);
 
         // The touch controls' layout: a tap picks the next one.
@@ -171,6 +185,14 @@ impl Launcher {
         let lw = ui.measure(Face::Medium, s.ui, &play);
         ui.text_line(Face::Medium, s.ui, ph, px + ((pw - lw) / 2.0).round(), py, color::on_accent(), &play);
         let _ = l.width;
+    }
+
+    /// The signed-in account's session for the game, if there is one with a valid token.
+    pub fn session(&self) -> Option<crate::auth::AuthSession> {
+        match self.account.state() {
+            crate::ms_sign_in::State::SignedIn(account) => account.session(),
+            _ => None,
+        }
     }
 
     pub fn hit(&self, ui: &Ui) -> Option<Hit> {
@@ -264,7 +286,20 @@ impl Launcher {
             }
             Some(Hit::SignIn) => {
                 self.commit(window);
-                self.note = Some(crate::lang::get("horizon.ios.home.sign_in_soon"));
+                use crate::ms_sign_in::State;
+                match self.account.state() {
+                    State::SignedOut | State::Failed(_) => self.account.start(),
+                    State::Code { code, uri } => {
+                        // The code on the clipboard, the page in Safari: paste, then come back.
+                        crate::clipboard::SystemClipboard::default().set_text(&code);
+                        #[cfg(target_os = "ios")]
+                        horizon_client_input::ios_open::open_url(&uri);
+                        #[cfg(not(target_os = "ios"))]
+                        let _ = uri;
+                    }
+                    State::SignedIn(_) => self.account.sign_out(),
+                    State::Starting | State::Working(_) => self.account.sign_out(),
+                }
                 false
             }
             Some(Hit::Touch) => {

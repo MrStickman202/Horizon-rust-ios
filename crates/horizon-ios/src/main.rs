@@ -130,7 +130,8 @@ fn step(what: &str) {
 }
 
 /// Sound plays like a game's: the Playback category, so it is heard with the iPad's silent
-/// mode on, and the session active before the game opens its audio output.
+/// mode on, mixed with whatever else plays (the player's music isn't paused), and the session
+/// active before the game opens its audio output.
 #[cfg(target_os = "ios")]
 fn audio_session() {
     use objc2::runtime::AnyObject;
@@ -147,7 +148,10 @@ fn audio_session() {
         }
         let category = NSString::from_str("AVAudioSessionCategoryPlayback");
         let none = std::ptr::null_mut::<*mut AnyObject>();
-        let set: bool = msg_send![session, setCategory: &*category, error: none];
+        // MixWithOthers (1): the player's music keeps playing under the game.
+        let mix_with_others: usize = 1;
+        let set: bool =
+            msg_send![session, setCategory: &*category, withOptions: mix_with_others, error: none];
         let active: bool = msg_send![session, setActive: true, error: none];
         step(&format!("audio: playback category {set}, active {active}"));
     }

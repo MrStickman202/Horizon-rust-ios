@@ -130,6 +130,7 @@ pub mod net;
 pub mod nether_portal;
 pub mod no_resources;
 pub mod ios_home;
+pub mod ms_sign_in;
 pub mod touch_controls;
 pub mod offline_name;
 pub mod old_world;

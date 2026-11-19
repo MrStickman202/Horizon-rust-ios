@@ -69,6 +69,15 @@ impl Loading {
         if !play {
             self.launcher = Some(launcher);
         } else {
+            // A signed-in Microsoft account plays as itself (online-mode servers, skin, chat
+            // signing), as the launcher's session file makes the desktop game do.
+            if let Some(session) = launcher.session() {
+                if let Some(options) = &mut self.options {
+                    options.player_name = Some(session.name.clone());
+                }
+                horizon_client::auth::set_current(session);
+                horizon_client::auth::prepare_chat_keys(true);
+            }
             horizon_client::ui_theme::reset_atlas();
         }
         if let Some(window) = &self.window {

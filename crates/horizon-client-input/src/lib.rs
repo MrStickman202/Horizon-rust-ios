@@ -6,6 +6,8 @@
 // iOS: only the clipboard (UIPasteboard, `clipboard.rs`) calls the Objective-C runtime.
 #![cfg_attr(target_os = "ios", deny(unsafe_code))]
 pub mod actions;
+#[cfg(target_os = "ios")]
+pub mod ios_open;
 pub mod clipboard;
 pub mod gamepad;
 pub mod gameplay_guide;
