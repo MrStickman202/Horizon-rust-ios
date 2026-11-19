@@ -13,8 +13,8 @@ It is not a secret: it ships inside every copy of the app. It is passed to the b
 `HORIZON_MSA_CLIENT_ID` (see `ios/config.env`). Sign-in uses the `consumers` endpoint; no tenant ID
 and no client secret are used. Each player's tokens stay in their own device's Keychain.
 
-Minecraft API access needs Mojang's approval of this client ID (https://aka.ms/mce-reviewappid);
-until then sign-in stops at the Minecraft step with HTTP 403.
+Mojang approved this client ID for the Minecraft services (https://aka.ms/mce-reviewappid), so
+signed-in players can play online.
 
 ## Privacy
 
