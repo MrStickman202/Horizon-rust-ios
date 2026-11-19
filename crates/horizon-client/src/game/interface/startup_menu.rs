@@ -1317,6 +1317,29 @@ impl Loading {
                     self.menu_option_events(events);
                 }
             }
+            // A character with no key (the iOS app's typed text; Windows' Alt codes): typed into
+            // the focused field, as the game's own screens take it (`type_chars_into_screen`).
+            WindowEvent::KeyboardInput { event, .. }
+                if event.state == ElementState::Pressed
+                    && matches!(event.physical_key, PhysicalKey::Unidentified(_))
+                    && event.text.is_some() =>
+            {
+                let text: String = event
+                    .text
+                    .as_deref()
+                    .unwrap_or_default()
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .collect();
+                if text.is_empty() {
+                } else if self.menu.options_open {
+                    if let Some(gui) = &self.gui {
+                        self.menu.options.type_text(&gui.atlas, &text);
+                    }
+                } else if let Some(title) = &mut self.menu.title {
+                    title.type_text(&text);
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 if event.physical_key == PhysicalKey::Code(KeyCode::F11) {
                     self.settings.fullscreen = !self.settings.fullscreen;

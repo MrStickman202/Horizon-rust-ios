@@ -52,6 +52,10 @@ declare_class!(
         #[method(drawRect:)]
         fn draw_rect(&self, rect: CGRect) {
             let mtm = MainThreadMarker::new().unwrap();
+            if app_state::hidden() {
+                let _: () = unsafe { msg_send![super(self), drawRect: rect] };
+                return;
+            }
             let window = self.window().unwrap();
             app_state::handle_nonuser_event(
                 mtm,

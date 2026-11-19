@@ -6,10 +6,9 @@ use std::ptr::NonNull;
 
 use block2::RcBlock;
 use objc2::rc::Retained;
-use objc2::runtime::Bool;
 use objc2_foundation::MainThreadMarker;
 use objc2_game_controller::{
-    GCControllerButtonInput, GCControllerDirectionPad, GCMouse, GCMouseInput,
+    GCControllerDirectionPad, GCMouse, GCMouseInput,
 };
 
 use super::app_state::{self, EventWrapper};
@@ -20,6 +19,8 @@ use crate::platform_impl::platform::DEVICE_ID;
 use crate::window::WindowId as RootWindowId;
 
 thread_local! {
+    /// The buttons last seen down (left, right, middle), for [`poll_buttons`].
+    static BUTTONS: Cell<[bool; 3]> = const { Cell::new([false; 3]) };
     static LOCKED: Cell<bool> = const { Cell::new(false) };
     static WINDOW: Cell<Option<RootWindowId>> = const { Cell::new(None) };
     /// The mice whose handlers are set, kept so a mouse isn't hooked twice.
@@ -105,27 +106,6 @@ fn hook(mouse: &Retained<GCMouse>) {
     });
     unsafe { input.setMouseMovedHandler(block_ptr(&moved)) };
     std::mem::forget(moved);
-    let buttons = [
-        (Some(unsafe { input.leftButton() }), MouseButton::Left),
-        (unsafe { input.rightButton() }, MouseButton::Right),
-        (unsafe { input.middleButton() }, MouseButton::Middle),
-    ];
-    for (button, which) in buttons {
-        let Some(button) = button else {
-            continue;
-        };
-        let changed = RcBlock::new(move |_: NonNull<GCControllerButtonInput>, _: f32, pressed: Bool| {
-            // A free pointer's left button arrives as a touch; UIKit gives a free pointer's
-            // right and middle buttons to no view, so those come from here either way.
-            if locked() || which != MouseButton::Left {
-                let state =
-                    if pressed.as_bool() { ElementState::Pressed } else { ElementState::Released };
-                window_event(WindowEvent::MouseInput { device_id: DEVICE_ID, state, button: which });
-            }
-        });
-        unsafe { button.setPressedChangedHandler(block_ptr(&changed)) };
-        std::mem::forget(changed);
-    }
     let scroll = unsafe { input.scroll() };
     let scrolled = RcBlock::new(|_: NonNull<GCControllerDirectionPad>, x: f32, y: f32| {
         if x != 0.0 || y != 0.0 {
@@ -143,4 +123,35 @@ fn hook(mouse: &Retained<GCMouse>) {
 /// The block as the raw pointer the handler setters take; they copy it.
 fn block_ptr<F: ?Sized>(block: &RcBlock<F>) -> *mut block2::Block<F> {
     &**block as *const block2::Block<F> as *mut block2::Block<F>
+}
+
+/// Each pass of the event loop: the mice's buttons, read now rather than through their change
+/// handlers, whose queued calls could reach the game a good while after the click (a right
+/// click went on using items for half a second after it was let go). With the pointer free,
+/// the left button comes from UIKit's touches instead.
+pub(crate) fn poll_buttons() {
+    let mice = HOOKED.with(|h| h.borrow().clone());
+    if mice.is_empty() {
+        return;
+    }
+    let mut now = [false; 3];
+    for mouse in &mice {
+        let Some(input) = (unsafe { mouse.mouseInput() }) else {
+            continue;
+        };
+        unsafe {
+            now[0] |= input.leftButton().isPressed();
+            now[1] |= input.rightButton().is_some_and(|b| b.isPressed());
+            now[2] |= input.middleButton().is_some_and(|b| b.isPressed());
+        }
+    }
+    let before = BUTTONS.with(|b| b.replace(now));
+    let locked = locked();
+    for (i, which) in [MouseButton::Left, MouseButton::Right, MouseButton::Middle].into_iter().enumerate() {
+        if now[i] == before[i] || (which == MouseButton::Left && !locked) {
+            continue;
+        }
+        let state = if now[i] { ElementState::Pressed } else { ElementState::Released };
+        window_event(WindowEvent::MouseInput { device_id: DEVICE_ID, state, button: which });
+    }
 }

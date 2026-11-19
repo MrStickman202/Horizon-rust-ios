@@ -699,11 +699,15 @@ pub fn handle_main_events_cleared(mtm: MainThreadMarker) {
     drop(this);
 
     handle_user_events(mtm);
+    // Horizon: the mice's buttons, read each pass (`mouse.rs`).
+    super::mouse::poll_buttons();
 
     let mut this = AppState::get_mut(mtm);
+    let hidden = HIDDEN.with(|h| h.get());
     let redraw_events: Vec<EventWrapper> = this
         .main_events_cleared_transition()
         .into_iter()
+        .filter(|_| !hidden)
         .map(|window| {
             EventWrapper::StaticEvent(Event::WindowEvent {
                 window_id: RootWindowId(window.id()),
@@ -719,7 +723,17 @@ pub fn handle_main_events_cleared(mtm: MainThreadMarker) {
 }
 
 thread_local! {
+    /// Horizon: the app isn't active (in the background, or covered): no frames.
+    static HIDDEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static EXIT_REQUESTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub(crate) fn set_hidden(hidden: bool) {
+    HIDDEN.with(|h| h.set(hidden));
+}
+
+pub(crate) fn hidden() -> bool {
+    HIDDEN.with(|h| h.get())
 }
 
 pub(crate) fn request_exit() {

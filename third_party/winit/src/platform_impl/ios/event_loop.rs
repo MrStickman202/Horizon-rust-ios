@@ -192,6 +192,7 @@ impl<T: 'static> EventLoop<T> {
             // `applicationDidBecomeActive:`
             unsafe { UIApplicationDidBecomeActiveNotification },
             move |_| {
+                app_state::set_hidden(false);
                 app_state::handle_nonuser_event(mtm, EventWrapper::StaticEvent(Event::Resumed));
             },
         );
@@ -201,6 +202,9 @@ impl<T: 'static> EventLoop<T> {
             unsafe { UIApplicationWillResignActiveNotification },
             move |_| {
                 app_state::handle_nonuser_event(mtm, EventWrapper::StaticEvent(Event::Suspended));
+                // Horizon: no frame is drawn until the app is active again. iOS refuses GPU work
+                // from an app in the background, and its errors took the game down.
+                app_state::set_hidden(true);
             },
         );
         let _will_enter_foreground_observer = create_observer(

@@ -434,6 +434,11 @@ impl ApplicationHandler for Game<'_> {
                 }
             }
             WindowEvent::KeyboardInput { .. } => self.touch_note_keyboard(),
+            WindowEvent::MouseInput { .. } | WindowEvent::CursorMoved { .. }
+                if self.touch_back_held() =>
+            {
+                return;
+            }
             _ => {}
         }
         let key = if self.window.as_ref().is_some_and(|w| w.id() == id)
@@ -511,6 +516,21 @@ impl ApplicationHandler for Game<'_> {
     /// window turns it into a window close, so Minecraft.stop saves the world.
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         self.shut_down();
+    }
+    /// The app is leaving the foreground (iOS: another app, the Home screen, the app switcher):
+    /// the game pauses at once, as a window that lost the focus does after 500 ms, since the
+    /// system stops the app before that: the world (the server thread) stands still while it is
+    /// away, and the pause screen is there when the player comes back.
+    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
+        if self.screen == Screen::Playing
+            && self.player.is_some()
+            && self.title.is_none()
+            && self.settings.file.bool("pauseOnLostFocus")
+            && !self.dialog_open()
+        {
+            self.pause_focus = None;
+            self.set_screen(Screen::Paused);
+        }
     }
 }
 

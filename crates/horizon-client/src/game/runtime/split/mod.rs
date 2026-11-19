@@ -879,6 +879,10 @@ impl ApplicationHandler for Split<'_> {
         }
     }
 
+    fn suspended(&mut self, event_loop: &ActiveEventLoop) {
+        self.host.suspended(event_loop);
+    }
+
     fn exiting(&mut self, event_loop: &ActiveEventLoop) {
         for i in (0..self.players()).rev() {
             if let Some((player, _)) = self.player(i) {
