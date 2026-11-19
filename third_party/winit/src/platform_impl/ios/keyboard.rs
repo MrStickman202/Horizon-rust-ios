@@ -16,6 +16,11 @@ thread_local! {
     /// When a hardware key last typed text: UIKit may also hand the same character to the
     /// view's `insertText:` while it takes text, which [`typed_by_key_just_now`] lets it skip.
     static TYPED_AT: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
+    static WINDOW: std::cell::Cell<Option<RootWindowId>> = const { std::cell::Cell::new(None) };
+    /// The keys GameController reports down, with the key each was sent as (a digit held
+    /// with Cmd goes as an F key, and its release with it).
+    static DOWN: std::cell::RefCell<Vec<(u32, KeyCode)>> = const { std::cell::RefCell::new(Vec::new()) };
+    static OBSERVING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Whether a hardware key typed text in the last moment (the view skips its `insertText:`).
@@ -23,88 +28,231 @@ pub(crate) fn typed_by_key_just_now() -> bool {
     TYPED_AT.with(|t| t.get()).is_some_and(|at| at.elapsed() < std::time::Duration::from_millis(150))
 }
 
-/// The presses' keys as key events for `window_id`. Returns true when any press was a keyboard
-/// key (the caller doesn't pass those on). The events carry the typed text.
+/// Hardware keys come from two places. Key down and key up, the modifiers included, come
+/// from the GameController framework's keyboard (`GCKeyboard`), which reports every key of
+/// every attached keyboard whichever view has the focus: UIKit's presses can lose a key up on
+/// the way through the responder chain (Shift stuck down). The text a key types comes from
+/// UIKit's presses (the layout's characters), as a text-only key event, the way `insertText:`
+/// sends it.
+pub(crate) fn start(window_id: RootWindowId) {
+    use objc2_foundation::{NSNotification, NSNotificationCenter, NSOperationQueue};
+    WINDOW.with(|w| w.set(Some(window_id)));
+    hook_keyboard();
+    if OBSERVING.with(|o| o.replace(true)) {
+        return;
+    }
+    let connected = block2::RcBlock::new(|_: std::ptr::NonNull<NSNotification>| hook_keyboard());
+    let observer = unsafe {
+        NSNotificationCenter::defaultCenter().addObserverForName_object_queue_usingBlock(
+            Some(objc2_game_controller::GCKeyboardDidConnectNotification),
+            None,
+            Some(&NSOperationQueue::mainQueue()),
+            &connected,
+        )
+    };
+    std::mem::forget(observer);
+}
+
+fn hook_keyboard() {
+    use objc2_game_controller::{GCControllerButtonInput, GCKeyCode, GCKeyboard, GCKeyboardInput};
+    use std::ptr::NonNull;
+    let Some(keyboard) = (unsafe { GCKeyboard::coalescedKeyboard() }) else {
+        return;
+    };
+    let Some(input) = (unsafe { keyboard.keyboardInput() }) else {
+        return;
+    };
+    let changed = block2::RcBlock::new(
+        |_: NonNull<GCKeyboardInput>, _: NonNull<GCControllerButtonInput>, code: GCKeyCode, pressed: objc2::runtime::Bool| {
+            key_changed(code as u32, pressed.as_bool());
+        },
+    );
+    let ptr = &*changed as *const block2::Block<_> as *mut block2::Block<_>;
+    unsafe { input.setKeyChangedHandler(ptr) };
+    std::mem::forget(changed);
+}
+
+fn modifier_state(down: &[(u32, KeyCode)]) -> ModifiersState {
+    let mut state = ModifiersState::empty();
+    for (_, code) in down {
+        match code {
+            KeyCode::ShiftLeft | KeyCode::ShiftRight => state |= ModifiersState::SHIFT,
+            KeyCode::ControlLeft | KeyCode::ControlRight => state |= ModifiersState::CONTROL,
+            KeyCode::AltLeft | KeyCode::AltRight => state |= ModifiersState::ALT,
+            KeyCode::SuperLeft | KeyCode::SuperRight => state |= ModifiersState::SUPER,
+            _ => {}
+        }
+    }
+    state
+}
+
+/// The iPad's Magic Keyboard and most keyboard cases have no function row: Cmd and a digit
+/// (Cmd+1 to Cmd+0, Cmd+- and Cmd+=) is F1 to F12.
+fn function_key(code: KeyCode, command: bool) -> KeyCode {
+    use KeyCode::*;
+    if !command {
+        return code;
+    }
+    match code {
+        Digit1 => F1,
+        Digit2 => F2,
+        Digit3 => F3,
+        Digit4 => F4,
+        Digit5 => F5,
+        Digit6 => F6,
+        Digit7 => F7,
+        Digit8 => F8,
+        Digit9 => F9,
+        Digit0 => F10,
+        Minus => F11,
+        Equal => F12,
+        other => other,
+    }
+}
+
+fn key_changed(usage: u32, pressed: bool) {
+    let Some(window_id) = WINDOW.with(|w| w.get()) else {
+        return;
+    };
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let Some(physical) = key_code(usage) else {
+        return;
+    };
+    let (sent, modifiers) = DOWN.with(|down| {
+        let mut down = down.borrow_mut();
+        let sent = if pressed {
+            let command = modifier_state(&down).super_key();
+            let sent = function_key(physical, command);
+            down.retain(|(u, _)| *u != usage);
+            down.push((usage, sent));
+            sent
+        } else {
+            let at = down.iter().position(|(u, _)| *u == usage);
+            at.map_or(physical, |i| down.remove(i).1)
+        };
+        (sent, modifier_state(&down))
+    });
+    let state = if pressed { ElementState::Pressed } else { ElementState::Released };
+    let logical_key = match named_key(sent) {
+        Some(named) => Key::Named(named),
+        None => match us_character(sent) {
+            Some(c) => Key::Character(smol_str::SmolStr::new(c)),
+            None => Key::Unidentified(crate::keyboard::NativeKey::Unidentified),
+        },
+    };
+    let mut events = Vec::new();
+    if matches!(logical_key, Key::Named(NamedKey::Shift | NamedKey::Control | NamedKey::Alt | NamedKey::Super)) {
+        events.push(EventWrapper::StaticEvent(Event::WindowEvent {
+            window_id,
+            event: WindowEvent::ModifiersChanged(Modifiers::from(modifiers)),
+        }));
+    }
+    events.push(EventWrapper::StaticEvent(Event::WindowEvent {
+        window_id,
+        event: WindowEvent::KeyboardInput {
+            device_id: DEVICE_ID,
+            event: KeyEvent {
+                physical_key: PhysicalKey::Code(sent),
+                logical_key,
+                text: None,
+                location: location(sent),
+                state,
+                repeat: false,
+                platform_specific: KeyEventExtra {},
+            },
+            is_synthetic: false,
+        },
+    }));
+    app_state::handle_nonuser_events(mtm, events);
+}
+
+/// The character a key gives on a US layout, unshifted: the key's logical name for bindings
+/// (`key.keyboard.a`); the text typed comes from UIKit's layout.
+fn us_character(code: KeyCode) -> Option<&'static str> {
+    use KeyCode::*;
+    Some(match code {
+        KeyA => "a", KeyB => "b", KeyC => "c", KeyD => "d", KeyE => "e", KeyF => "f", KeyG => "g",
+        KeyH => "h", KeyI => "i", KeyJ => "j", KeyK => "k", KeyL => "l", KeyM => "m", KeyN => "n",
+        KeyO => "o", KeyP => "p", KeyQ => "q", KeyR => "r", KeyS => "s", KeyT => "t", KeyU => "u",
+        KeyV => "v", KeyW => "w", KeyX => "x", KeyY => "y", KeyZ => "z",
+        Digit1 => "1", Digit2 => "2", Digit3 => "3", Digit4 => "4", Digit5 => "5",
+        Digit6 => "6", Digit7 => "7", Digit8 => "8", Digit9 => "9", Digit0 => "0",
+        Minus => "-", Equal => "=", BracketLeft => "[", BracketRight => "]", Backslash => "\\",
+        Semicolon => ";", Quote => "'", Backquote => "`", Comma => ",", Period => ".", Slash => "/",
+        _ => return None,
+    })
+}
+
+/// UIKit's presses: only the text a key types (the keys themselves come from [`key_changed`]).
+/// Returns true when any press was a keyboard key, so the caller doesn't pass it on.
 pub(crate) fn handle_presses(
     mtm: MainThreadMarker,
     window_id: RootWindowId,
     presses: &NSSet<UIPress>,
     state: ElementState,
 ) -> bool {
+    let mut keyboard = false;
     let mut events = Vec::new();
     for press in presses.iter() {
         let Some(key) = (unsafe { press.key(mtm) }) else {
             continue;
         };
-        let flags = unsafe { key.modifierFlags() };
-        events.push(EventWrapper::StaticEvent(Event::WindowEvent {
-            window_id,
-            event: WindowEvent::ModifiersChanged(Modifiers::from(modifiers(flags))),
-        }));
-        events.push(EventWrapper::StaticEvent(Event::WindowEvent {
-            window_id,
-            event: WindowEvent::KeyboardInput {
-                device_id: DEVICE_ID,
-                event: key_event(&key, state, true),
-                is_synthetic: false,
-            },
-        }));
+        keyboard = true;
+        if state != ElementState::Pressed {
+            continue;
+        }
+        if let Some(text) = typed_text(&key) {
+            TYPED_AT.with(|t| t.set(Some(std::time::Instant::now())));
+            events.push(EventWrapper::StaticEvent(Event::WindowEvent {
+                window_id,
+                event: WindowEvent::KeyboardInput {
+                    device_id: DEVICE_ID,
+                    event: KeyEvent {
+                        physical_key: PhysicalKey::Unidentified(
+                            crate::keyboard::NativeKeyCode::Unidentified,
+                        ),
+                        logical_key: Key::Character(text.clone()),
+                        text: Some(text),
+                        location: KeyLocation::Standard,
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        platform_specific: KeyEventExtra {},
+                    },
+                    is_synthetic: false,
+                },
+            }));
+        } else if unsafe { key.keyCode() }.0 == 0x2A || unsafe { key.keyCode() }.0 == 0x28 {
+            // Backspace and Enter type nothing, but UIKit's own deleteBackward or newline
+            // must not repeat them.
+            TYPED_AT.with(|t| t.set(Some(std::time::Instant::now())));
+        }
     }
-    let handled = !events.is_empty();
-    if handled {
+    if !events.is_empty() {
         app_state::handle_nonuser_events(mtm, events);
     }
-    handled
+    keyboard
 }
 
-fn modifiers(flags: UIKeyModifierFlags) -> ModifiersState {
-    let mut state = ModifiersState::empty();
-    state.set(ModifiersState::SHIFT, flags.contains(UIKeyModifierFlags::UIKeyModifierShift));
-    state.set(ModifiersState::CONTROL, flags.contains(UIKeyModifierFlags::UIKeyModifierControl));
-    state.set(ModifiersState::ALT, flags.contains(UIKeyModifierFlags::UIKeyModifierAlternate));
-    state.set(ModifiersState::SUPER, flags.contains(UIKeyModifierFlags::UIKeyModifierCommand));
-    state
-}
-
-fn key_event(key: &Retained<UIKey>, state: ElementState, with_text: bool) -> KeyEvent {
-    let usage = unsafe { key.keyCode() }.0 as u32;
-    let code = key_code(usage);
-    let characters = unsafe { key.characters() }.to_string();
-    let named = code.and_then(named_key);
-    let logical_key = match named {
-        Some(named) => Key::Named(named),
-        None => match characters.chars().next() {
-            Some(c) if !c.is_control() => Key::Character(smol_str::SmolStr::new(&characters)),
-            _ => Key::Unidentified(crate::keyboard::NativeKey::Unidentified),
-        },
-    };
-    // A shortcut (Cmd or Ctrl held) types nothing, as on macOS.
+/// What a press types: its characters, a space for Space; nothing for a shortcut (Cmd or Ctrl
+/// held) or a key that types no character.
+fn typed_text(key: &Retained<UIKey>) -> Option<smol_str::SmolStr> {
     let flags = unsafe { key.modifierFlags() };
-    let shortcut = flags.intersects(
-        UIKeyModifierFlags::UIKeyModifierCommand | UIKeyModifierFlags::UIKeyModifierControl,
-    );
-    let text: Option<smol_str::SmolStr> = match (&logical_key, state) {
-        _ if !with_text || shortcut || state != ElementState::Pressed => None,
-        (Key::Character(text), _) => Some(text.clone()),
-        (Key::Named(NamedKey::Space), _) => Some(" ".into()),
-        (Key::Named(NamedKey::Enter), _) => Some("\r".into()),
-        (Key::Named(NamedKey::Tab), _) => Some("\t".into()),
-        _ => None,
-    };
-    if state == ElementState::Pressed {
-        TYPED_AT.with(|t| t.set(Some(std::time::Instant::now())));
+    if flags.intersects(UIKeyModifierFlags::UIKeyModifierCommand | UIKeyModifierFlags::UIKeyModifierControl) {
+        return None;
     }
-    KeyEvent {
-        physical_key: code.map_or(
-            PhysicalKey::Unidentified(crate::keyboard::NativeKeyCode::Unidentified),
-            PhysicalKey::Code,
-        ),
-        logical_key,
-        text,
-        location: code.map_or(KeyLocation::Standard, location),
-        state,
-        repeat: false,
-        platform_specific: KeyEventExtra {},
+    let usage = unsafe { key.keyCode() }.0 as u32;
+    if key_code(usage) == Some(KeyCode::Space) {
+        return Some(" ".into());
+    }
+    let characters = unsafe { key.characters() }.to_string();
+    let mut chars = characters.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c), None) if !c.is_control() && !('\u{F700}'..='\u{F8FF}').contains(&c) => {
+            Some(smol_str::SmolStr::new(&characters))
+        }
+        _ => None,
     }
 }
 

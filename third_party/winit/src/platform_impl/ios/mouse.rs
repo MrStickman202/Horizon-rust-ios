@@ -115,7 +115,9 @@ fn hook(mouse: &Retained<GCMouse>) {
             continue;
         };
         let changed = RcBlock::new(move |_: NonNull<GCControllerButtonInput>, _: f32, pressed: Bool| {
-            if locked() {
+            // A free pointer's left button arrives as a touch; UIKit gives a free pointer's
+            // right and middle buttons to no view, so those come from here either way.
+            if locked() || which != MouseButton::Left {
                 let state =
                     if pressed.as_bool() { ElementState::Pressed } else { ElementState::Released };
                 window_event(WindowEvent::MouseInput { device_id: DEVICE_ID, state, button: which });

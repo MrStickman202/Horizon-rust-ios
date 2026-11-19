@@ -462,4 +462,7 @@ iPadOS reach the game as key events with physical key codes, key up and modifier
 (a finger, or an iPad trackpad or mouse) also drives the mouse pointer and its motion
 (`view.rs`); and `set_cursor_grab(Locked)` locks the iPad pointer (`prefersPointerLocked`), with
 a locked trackpad's or mouse's motion, buttons and scrolling read through GameController's
-`GCMouse` (`src/platform_impl/ios/mouse.rs`).
+`GCMouse` (`src/platform_impl/ios/mouse.rs`); hardware keyboards' key down and up come from
+GameController's `GCKeyboard` and their text from UIKit's presses, with Cmd+1 to Cmd+= as F1 to
+F12 (`keyboard.rs`); and the current game controller is read for the game
+(`platform::ios::gamepad`, `gamepad.rs`).

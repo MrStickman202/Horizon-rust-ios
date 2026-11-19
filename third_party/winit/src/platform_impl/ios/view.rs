@@ -150,23 +150,23 @@ declare_class!(
         }
 
         #[method(touchesBegan:withEvent:)]
-        fn touches_began(&self, touches: &NSSet<UITouch>, _event: Option<&UIEvent>) {
-            self.handle_touches(touches)
+        fn touches_began(&self, touches: &NSSet<UITouch>, event: Option<&UIEvent>) {
+            self.handle_touches(touches, event)
         }
 
         #[method(touchesMoved:withEvent:)]
-        fn touches_moved(&self, touches: &NSSet<UITouch>, _event: Option<&UIEvent>) {
-            self.handle_touches(touches)
+        fn touches_moved(&self, touches: &NSSet<UITouch>, event: Option<&UIEvent>) {
+            self.handle_touches(touches, event)
         }
 
         #[method(touchesEnded:withEvent:)]
-        fn touches_ended(&self, touches: &NSSet<UITouch>, _event: Option<&UIEvent>) {
-            self.handle_touches(touches)
+        fn touches_ended(&self, touches: &NSSet<UITouch>, event: Option<&UIEvent>) {
+            self.handle_touches(touches, event)
         }
 
         #[method(touchesCancelled:withEvent:)]
-        fn touches_cancelled(&self, touches: &NSSet<UITouch>, _event: Option<&UIEvent>) {
-            self.handle_touches(touches)
+        fn touches_cancelled(&self, touches: &NSSet<UITouch>, event: Option<&UIEvent>) {
+            self.handle_touches(touches, event)
         }
 
         #[method(pinchGesture:)]
@@ -508,7 +508,12 @@ impl WinitView {
         }
     }
 
-    fn handle_touches(&self, touches: &NSSet<UITouch>) {
+    fn handle_touches(&self, touches: &NSSet<UITouch>, event: Option<&UIEvent>) {
+        // Horizon: a trackpad's or mouse's secondary click comes as a touch too; GameController
+        // reports it as the right button (`mouse.rs`), so it isn't the left one here.
+        let secondary = event.is_some_and(|e| {
+            unsafe { e.buttonMask() }.contains(objc2_ui_kit::UIEventButtonMask::Secondary)
+        });
         let window = self.window().unwrap();
         let mut touch_events = Vec::new();
         let os_supports_force = app_state::os_capabilities().force_touch;
@@ -572,6 +577,7 @@ impl WinitView {
                 }),
             }));
             }
+            if !(secondary && touch_type == UITouchType::IndirectPointer) {
             pointer_from_touch(
                 &mut touch_events,
                 RootWindowId(window.id()),
@@ -579,6 +585,7 @@ impl WinitView {
                 phase,
                 physical_location,
             );
+            }
         }
         let mtm = MainThreadMarker::new().unwrap();
         app_state::handle_nonuser_events(mtm, touch_events);
