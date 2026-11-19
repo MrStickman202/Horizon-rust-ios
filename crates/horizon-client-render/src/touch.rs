@@ -296,7 +296,7 @@ impl TouchControls {
             if let Some((old, k)) = slot
                 && (p.center[0] - (0.5 + side * (old - 0.5))).abs() < 0.0001
             {
-                let step = p.size * self.settings.button_scale / aspect + 0.012;
+                let step = p.size * self.settings.button_scale / aspect + 0.008;
                 p.center[0] = 0.5 + side * k * step.max(0.04);
             }
         }
