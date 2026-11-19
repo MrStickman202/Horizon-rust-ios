@@ -5,6 +5,10 @@ name: iOS
 on:
   push:
     branches: [main]
+    # A README edit doesn't change the app: no new build (and no cancelled one).
+    paths-ignore:
+      - "README.md"
+      - "ios/README.md"
   workflow_dispatch:
 
 permissions:
