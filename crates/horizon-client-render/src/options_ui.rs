@@ -8221,6 +8221,24 @@ mod tests {
     }
 
     #[test]
+    fn browse_mods_search_takes_typed_text_after_a_tap() {
+        let atlas = atlas();
+        let size = (960.0, 540.0);
+        let mut s = Settings::default();
+        let mut ui = OptionsUi::default();
+        ui.show(Page::ModBrowser);
+        let _ = ui.layout(&s, size.0, size.1);
+        let (x, y) = (ui.settings_search.x + 20.0, ui.settings_search.y + 5.0);
+        ui.click(&mut s, &atlas, x, y, size, [960, 540], false, false);
+        // The pointer a finger makes moves a little while it is down, then lifts.
+        ui.click(&mut s, &atlas, x + 1.0, y, size, [960, 540], true, false);
+        ui.release();
+        assert!(ui.typing());
+        ui.type_text(&atlas, "sod");
+        assert_eq!(ui.settings_search.value, "sod");
+    }
+
+    #[test]
     fn the_music_page_button_follows_the_extra() {
         let atlas = atlas();
         let size = (960.0, 540.0);

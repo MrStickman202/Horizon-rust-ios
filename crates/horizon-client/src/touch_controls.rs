@@ -29,7 +29,12 @@ pub enum Scheme {
 const FILE: &str = "horizon-touch.txt";
 
 impl Scheme {
-    pub const ALL: [Scheme; 4] = [Scheme::Joystick, Scheme::Crosshair, Scheme::DPad, Scheme::Horizon];
+    pub const ALL: [Scheme; 4] = [
+        Scheme::Joystick,
+        Scheme::Crosshair,
+        Scheme::DPad,
+        Scheme::Horizon,
+    ];
     fn key(self) -> &'static str {
         match self {
             Scheme::Joystick => "joystick",
@@ -58,8 +63,14 @@ impl Scheme {
     /// The player's choice, kept beside `options.txt`.
     pub fn load(dir: &std::path::Path) -> Self {
         let text = std::fs::read_to_string(dir.join(FILE)).unwrap_or_default();
-        let key = text.lines().find_map(|l| l.trim().strip_prefix("scheme:")).unwrap_or("");
-        Self::ALL.into_iter().find(|s| s.key() == key).unwrap_or_default()
+        let key = text
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("scheme:"))
+            .unwrap_or("");
+        Self::ALL
+            .into_iter()
+            .find(|s| s.key() == key)
+            .unwrap_or_default()
     }
     pub fn save(self, dir: &std::path::Path) -> std::io::Result<()> {
         std::fs::write(dir.join(FILE), format!("scheme:{}\n", self.key()))
@@ -69,7 +80,9 @@ impl Scheme {
 /// Physical pixels per screen point: `ui_theme::Ui`'s own unit, so the controls are the same
 /// size on every screen and drawn where they are hit.
 pub fn density(physical: [f32; 2]) -> f32 {
-    (physical[0] / 1040.0).min(physical[1] / 700.0).clamp(1.0, 4.0)
+    (physical[0] / 1040.0)
+        .min(physical[1] / 700.0)
+        .clamp(1.0, 4.0)
 }
 
 /// The keys a tile the player adds can press: the keyboard keys a touch player has no other
@@ -280,7 +293,13 @@ impl Layout {
         let jump = [w - m - big, h - m - big - 30.0];
         let mut defaults = vec![(Control::Jump, jump, big)];
         // The top bar, centred: edit, F3, F5, chat, pause.
-        let bar = [Control::Edit, Control::Debug, Control::Perspective, Control::Chat, Control::Pause];
+        let bar = [
+            Control::Edit,
+            Control::Debug,
+            Control::Perspective,
+            Control::Chat,
+            Control::Pause,
+        ];
         let step = top * 2.0 + 10.0;
         let first = w / 2.0 - step * (bar.len() as f32 - 1.0) / 2.0;
         for (i, control) in bar.into_iter().enumerate() {
@@ -291,17 +310,32 @@ impl Layout {
         // Inventory: the "…" tile at the hotbar's right end, as on Bedrock.
         defaults.push((
             Control::Inventory,
-            [hotbar[0] + hotbar_w + 11.0 * gui + 4.0, hotbar[1] + 11.0 * gui],
+            [
+                hotbar[0] + hotbar_w + 11.0 * gui + 4.0,
+                hotbar[1] + 11.0 * gui,
+            ],
             11.0 * gui,
         ));
         let beside = [jump[0] - big - small - 16.0, jump[1] + big - small];
         if scheme != Scheme::DPad {
             defaults.push((Control::Sneak, beside, small));
         }
-        defaults.push((Control::Sprint, [beside[0] - small * 2.0 - 12.0, beside[1]], small));
+        defaults.push((
+            Control::Sprint,
+            [beside[0] - small * 2.0 - 12.0, beside[1]],
+            small,
+        ));
         if scheme == Scheme::Crosshair {
-            defaults.push((Control::Attack, [jump[0], jump[1] - big - small - 16.0], small));
-            defaults.push((Control::Use, [beside[0], jump[1] - big - small - 16.0], small));
+            defaults.push((
+                Control::Attack,
+                [jump[0], jump[1] - big - small - 16.0],
+                small,
+            ));
+            defaults.push((
+                Control::Use,
+                [beside[0], jump[1] - big - small - 16.0],
+                small,
+            ));
         }
         // The player's edits: moved, resized, hidden; and the tiles they added.
         let mut tiles = Vec::new();
@@ -314,7 +348,12 @@ impl Layout {
                     half: half * p.size.clamp(0.4, 2.5),
                     hidden: p.hidden,
                 },
-                None => Tile { control: *control, centre: *centre, half: *half, hidden: false },
+                None => Tile {
+                    control: *control,
+                    centre: *centre,
+                    half: *half,
+                    hidden: false,
+                },
             });
         }
         for p in config.placed() {
@@ -416,7 +455,12 @@ impl Layout {
 
     /// The Back tile over a screen: the top-left corner.
     pub fn back_tile(&self) -> Tile {
-        Tile { control: Control::Back, centre: [28.0 + 22.0, 28.0 + 22.0], half: 22.0, hidden: false }
+        Tile {
+            control: Control::Back,
+            centre: [28.0 + 22.0, 28.0 + 22.0],
+            half: 22.0,
+            hidden: false,
+        }
     }
 }
 
@@ -434,14 +478,20 @@ pub enum EditAction {
     /// A tile the player added: the next key.
     NextKey,
     Delete,
+    /// The next touch scheme (the Horizon scheme's Touch button cycles back).
+    Scheme,
 }
 
 /// The editor's toolbar and the panel for `selected`, in points: each button's action, rect
 /// and label key.
-pub fn editor_buttons(layout: &Layout, selected: Option<Control>) -> Vec<(EditAction, [f32; 4], &'static str)> {
+pub fn editor_buttons(
+    layout: &Layout,
+    selected: Option<Control>,
+) -> Vec<(EditAction, [f32; 4], &'static str)> {
     let (bw, bh, gap) = (120.0, 40.0, 10.0);
     let mut out = Vec::new();
     let toolbar = [
+        (EditAction::Scheme, "horizon.touch.edit.scheme"),
         (EditAction::Add, "horizon.touch.edit.add"),
         (EditAction::Reset, "horizon.touch.edit.reset"),
         (EditAction::Done, "horizon.touch.edit.done"),
@@ -512,20 +562,52 @@ pub fn draw(atlas: &HudAtlas, batch: &mut HudBatch, layout: &Layout, shown: &Sho
         let [dx, dy] = dir;
         let (px, py) = (-dy, dx);
         let tip = [c[0] + dx * size * 0.55, c[1] + dy * size * 0.55];
-        let a = [c[0] - dx * size * 0.45 + px * size * 0.55, c[1] - dy * size * 0.45 + py * size * 0.55];
-        let b = [c[0] - dx * size * 0.45 - px * size * 0.55, c[1] - dy * size * 0.45 - py * size * 0.55];
-        icons.push(([[tip[0] * k, tip[1] * k], [a[0] * k, a[1] * k], [b[0] * k, b[1] * k]], color));
+        let a = [
+            c[0] - dx * size * 0.45 + px * size * 0.55,
+            c[1] - dy * size * 0.45 + py * size * 0.55,
+        ];
+        let b = [
+            c[0] - dx * size * 0.45 - px * size * 0.55,
+            c[1] - dy * size * 0.45 - py * size * 0.55,
+        ];
+        icons.push((
+            [
+                [tip[0] * k, tip[1] * k],
+                [a[0] * k, a[1] * k],
+                [b[0] * k, b[1] * k],
+            ],
+            color,
+        ));
     };
     let mut ui = Ui::new(atlas, batch, (-1.0, -1.0));
     let s = sizes();
     let tile = |ui: &mut Ui, c: [f32; 2], half: f32, held: bool| {
-        ui.rounded(c[0] - half, c[1] - half, half * 2.0, half * 2.0, 6.0, if held { TILE_HELD } else { TILE });
+        ui.rounded(
+            c[0] - half,
+            c[1] - half,
+            half * 2.0,
+            half * 2.0,
+            6.0,
+            if held { TILE_HELD } else { TILE },
+        );
         ui.border(c[0] - half, c[1] - half, half * 2.0, half * 2.0, 6.0, RIM);
     };
     let label = |ui: &mut Ui, c: [f32; 2], half: f32, text: &str, ink: u32| {
-        let size = if half > 16.0 { s.caption } else { s.caption * 0.85 };
+        let size = if half > 16.0 {
+            s.caption
+        } else {
+            s.caption * 0.85
+        };
         let lw = ui.measure(Face::Medium, size, text);
-        ui.text_line(Face::Medium, size, half * 2.0, c[0] - lw / 2.0, c[1] - half, ink, text);
+        ui.text_line(
+            Face::Medium,
+            size,
+            half * 2.0,
+            c[0] - lw / 2.0,
+            c[1] - half,
+            ink,
+            text,
+        );
     };
     if shown.back_only {
         let t = layout.back_tile();
@@ -553,7 +635,13 @@ pub fn draw(atlas: &HudAtlas, batch: &mut HudBatch, layout: &Layout, shown: &Sho
                 let c = [cx + dir[0] * step, cy + dir[1] * step];
                 let held = (dir[0] != 0.0 && dir[0] == px) || (dir[1] != 0.0 && dir[1] == py);
                 tile(&mut ui, c, h, held);
-                tri(&mut icons, c, h * 0.9, dir, if held { ICON_HELD } else { ICON });
+                tri(
+                    &mut icons,
+                    c,
+                    h * 0.9,
+                    dir,
+                    if held { ICON_HELD } else { ICON },
+                );
             }
             // Walking forward, Bedrock adds the two forward diagonals.
             if py < 0.0 {
@@ -562,7 +650,13 @@ pub fn draw(atlas: &HudAtlas, batch: &mut HudBatch, layout: &Layout, shown: &Sho
                     let held = px == side;
                     tile(&mut ui, c, h * 0.8, held);
                     let d = std::f32::consts::FRAC_1_SQRT_2;
-                    tri(&mut icons, c, h * 0.8, [side * d, -d], if held { ICON_HELD } else { ICON });
+                    tri(
+                        &mut icons,
+                        c,
+                        h * 0.8,
+                        [side * d, -d],
+                        if held { ICON_HELD } else { ICON },
+                    );
                 }
             }
             // The middle: Sneak.
@@ -571,13 +665,26 @@ pub fn draw(atlas: &HudAtlas, batch: &mut HudBatch, layout: &Layout, shown: &Sho
             ui.rounded(cx - h * 0.3, cy - h * 0.3, h * 0.6, h * 0.6, h * 0.3, ink);
         }
         _ => {
-            let (base, knob) = shown.stick.unwrap_or((layout.stick_home, layout.stick_home));
+            let (base, knob) = shown
+                .stick
+                .unwrap_or((layout.stick_home, layout.stick_home));
             let r = layout.stick_radius;
             ui.rounded(base[0] - r, base[1] - r, r * 2.0, r * 2.0, r, TILE);
             ui.border(base[0] - r, base[1] - r, r * 2.0, r * 2.0, r, RIM);
             let kr = r * 0.42;
-            let knob_color = if shown.stick.is_some() { 0xD0FFFFFF } else { 0x88FFFFFF };
-            ui.rounded(knob[0] - kr, knob[1] - kr, kr * 2.0, kr * 2.0, kr, knob_color);
+            let knob_color = if shown.stick.is_some() {
+                0xD0FFFFFF
+            } else {
+                0x88FFFFFF
+            };
+            ui.rounded(
+                knob[0] - kr,
+                knob[1] - kr,
+                kr * 2.0,
+                kr * 2.0,
+                kr,
+                knob_color,
+            );
         }
     }
     let selected = shown.editing.and_then(|(selected, _)| selected);
@@ -591,17 +698,37 @@ pub fn draw(atlas: &HudAtlas, batch: &mut HudBatch, layout: &Layout, shown: &Sho
         let held = shown.held.contains(&t.control)
             || (t.control == Control::Sneak && shown.sneaking)
             || (t.control == Control::Sprint && shown.sprinting);
-        let ink = if held { ICON_HELD } else if t.hidden { 0x66FFFFFF } else { ICON };
+        let ink = if held {
+            ICON_HELD
+        } else if t.hidden {
+            0x66FFFFFF
+        } else {
+            ICON
+        };
         let [cx, cy] = t.centre;
         let h = t.half;
         tile(&mut ui, t.centre, h, held);
         if selected == Some(t.control) {
-            ui.border(cx - h - 3.0, cy - h - 3.0, h * 2.0 + 6.0, h * 2.0 + 6.0, 8.0, SELECTED);
+            ui.border(
+                cx - h - 3.0,
+                cy - h - 3.0,
+                h * 2.0 + 6.0,
+                h * 2.0 + 6.0,
+                8.0,
+                SELECTED,
+            );
         }
         match t.control {
             Control::Jump => tri(&mut icons, t.centre, h * 0.9, [0.0, -1.0], ink),
             Control::Sneak => {
-                ui.rounded(cx - h * 0.35, cy - h * 0.35, h * 0.7, h * 0.7, h * 0.35, ink);
+                ui.rounded(
+                    cx - h * 0.35,
+                    cy - h * 0.35,
+                    h * 0.7,
+                    h * 0.7,
+                    h * 0.35,
+                    ink,
+                );
             }
             Control::Sprint => {
                 tri(&mut icons, [cx - h * 0.18, cy], h * 0.6, [1.0, 0.0], ink);
@@ -614,7 +741,14 @@ pub fn draw(atlas: &HudAtlas, batch: &mut HudBatch, layout: &Layout, shown: &Sho
             Control::Inventory => {
                 for i in -1..=1 {
                     let x = cx + i as f32 * h * 0.5;
-                    ui.rounded(x - h * 0.13, cy - h * 0.13, h * 0.26, h * 0.26, h * 0.13, ink);
+                    ui.rounded(
+                        x - h * 0.13,
+                        cy - h * 0.13,
+                        h * 0.26,
+                        h * 0.26,
+                        h * 0.13,
+                        ink,
+                    );
                 }
             }
             Control::Back => tri(&mut icons, t.centre, h * 0.9, [-1.0, 0.0], ink),
@@ -635,7 +769,14 @@ pub fn draw(atlas: &HudAtlas, batch: &mut HudBatch, layout: &Layout, shown: &Sho
     if let Some((selected, config)) = shown.editing {
         for (action, [x, y, w, h], key) in editor_buttons(layout, selected) {
             let primary = action == EditAction::Done;
-            ui.rounded(x, y, w, h, h / 2.0, if primary { 0xFF5B3FD6 } else { 0xE0201A33 });
+            ui.rounded(
+                x,
+                y,
+                w,
+                h,
+                h / 2.0,
+                if primary { 0xFF5B3FD6 } else { 0xE0201A33 },
+            );
             let mut text = crate::lang::get(key);
             if action == EditAction::Mode
                 && let Some(control) = selected
@@ -653,11 +794,27 @@ pub fn draw(atlas: &HudAtlas, batch: &mut HudBatch, layout: &Layout, shown: &Sho
                 text = crate::lang::get("horizon.touch.edit.show");
             }
             let lw = ui.measure(Face::Medium, s.caption, &text);
-            ui.text_line(Face::Medium, s.caption, h, x + (w - lw) / 2.0, y, 0xFFFFFFFF, &text);
+            ui.text_line(
+                Face::Medium,
+                s.caption,
+                h,
+                x + (w - lw) / 2.0,
+                y,
+                0xFFFFFFFF,
+                &text,
+            );
         }
         let hint = crate::lang::get("horizon.touch.edit.hint");
         let lw = ui.measure(Face::Regular, s.caption, &hint);
-        ui.text_line(Face::Regular, s.caption, 20.0, (layout.w - lw) / 2.0, layout.h * 0.32 - 28.0, 0xFFFFFFFF, &hint);
+        ui.text_line(
+            Face::Regular,
+            s.caption,
+            20.0,
+            (layout.w - lw) / 2.0,
+            layout.h * 0.32 - 28.0,
+            0xFFFFFFFF,
+            &hint,
+        );
     }
     ui.finish();
     for (corners, color) in icons {

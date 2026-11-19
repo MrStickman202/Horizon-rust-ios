@@ -281,6 +281,25 @@ impl TouchControls {
                 p.size = p.size.min(aspect * 0.12);
             }
         }
+        // Landscape: the factory row's 0.04 steps are narrower than its buttons on any screen
+        // squarer than 16:9 (an iPad is 4:3), so they'd overlap. Space them by their width,
+        // Pause staying in the middle.
+        if aspect >= 1.0 && p.center[1] == 0.055 && p.size == 0.075 {
+            let slot = match c {
+                Control::Debug => Some((0.42, -2.0)),
+                Control::Chat => Some((0.46, -1.0)),
+                Control::Settings => Some((0.54, 1.0)),
+                Control::Perspective => Some((0.58, 2.0)),
+                _ => None,
+            };
+            let side = if self.settings.left_handed { -1.0 } else { 1.0 };
+            if let Some((old, k)) = slot
+                && (p.center[0] - (0.5 + side * (old - 0.5))).abs() < 0.0001
+            {
+                let step = p.size * self.settings.button_scale / aspect + 0.012;
+                p.center[0] = 0.5 + side * k * step.max(0.04);
+            }
+        }
         let mut p = self.fit(p);
         if factory_swap {
             // The factory swap button sits beside inventory, in button sizes,

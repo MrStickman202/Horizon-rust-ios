@@ -420,7 +420,7 @@ impl ApplicationHandler for Game<'_> {
         }
         self.resize_state = Some(self.resize_state_of(window.inner_size()));
         self.window = Some(window);
-        self.ime_allowed = false;
+        self.ime_allowed = cfg!(target_os = "ios");
         self.ime_area = None;
         self.apply_settings();
         self.previous = Instant::now();
@@ -433,7 +433,17 @@ impl ApplicationHandler for Game<'_> {
                     return;
                 }
             }
-            WindowEvent::KeyboardInput { .. } => self.touch_note_keyboard(),
+            // A real key, not the on-screen keyboard's text or its delete key over a screen
+            // (that's typing by touch).
+            WindowEvent::KeyboardInput { event, .. }
+                if matches!(
+                    event.physical_key,
+                    winit::keyboard::PhysicalKey::Code(code)
+                        if code != KeyCode::Backspace || self.screen == Screen::Playing
+                ) =>
+            {
+                self.touch_note_keyboard()
+            }
             WindowEvent::MouseInput { .. } | WindowEvent::CursorMoved { .. }
                 if self.touch_back_held() =>
             {

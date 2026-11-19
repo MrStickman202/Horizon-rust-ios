@@ -360,3 +360,24 @@ fn a_world_touch_turns_the_camera_only_once_it_drags() {
         [0.0; 2]
     );
 }
+
+#[test]
+fn landscape_top_row_never_overlaps_on_a_four_by_three_screen() {
+    let mut t = TouchControls::default();
+    t.viewport(2048, 1536);
+    let top = [
+        Control::Debug,
+        Control::Chat,
+        Control::Pause,
+        Control::Settings,
+        Control::Perspective,
+    ];
+    let rects: Vec<_> = top
+        .iter()
+        .map(|c| t.placement(*c).rect(t.aspect()))
+        .collect();
+    for pair in rects.windows(2) {
+        assert!(pair[0][0] + pair[0][2] < pair[1][0], "{pair:?}");
+    }
+    assert!((t.placement(Control::Pause).center[0] - 0.5).abs() < 1e-6);
+}

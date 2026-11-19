@@ -214,6 +214,8 @@ impl Loading {
             self.error = Some(error);
             event_loop.exit();
         }
+        #[cfg(target_os = "ios")]
+        self.menu_sync_ime();
     }
     /// The menu bundle arrived: rebuild the loading screen with the real atlas
     /// and title panorama.

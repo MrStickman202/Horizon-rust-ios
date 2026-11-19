@@ -32,18 +32,31 @@ const SNAP: f32 = 14.0;
 #[derive(Clone, Copy, Debug)]
 enum Role {
     /// The joystick, from where the finger came down.
-    Stick { origin: [f32; 2] },
+    Stick {
+        origin: [f32; 2],
+    },
     /// The D-pad's arrows: the direction follows the finger.
     DPad,
     Button(Control),
     /// Turning the view: the finger's last position in physical px, where (points) and when it
     /// came down, whether it wandered off (no tap) and whether its hold breaks.
-    Look { last: (f64, f64), start: [f32; 2], at: Instant, moved: bool, breaking: bool },
+    Look {
+        last: (f64, f64),
+        start: [f32; 2],
+        at: Instant,
+        moved: bool,
+        breaking: bool,
+    },
     /// A tap on the hotbar.
     Slot,
     /// The editor: dragging a tile, from its centre's offset to the finger; the last two
     /// positions and times, for a flick.
-    Drag { control: Control, offset: [f32; 2], last: ([f32; 2], Instant), before: ([f32; 2], Instant) },
+    Drag {
+        control: Control,
+        offset: [f32; 2],
+        last: ([f32; 2], Instant),
+        before: ([f32; 2], Instant),
+    },
     /// Nothing more until it lifts.
     Ignore,
 }
@@ -69,6 +82,9 @@ pub(super) struct TouchPlay {
     editing: Option<Option<Control>>,
     /// Horizon's own touch controls, for [`Scheme::Horizon`], with their saved layout.
     horizon: Option<Box<horizon_client_render::touch::TouchControls>>,
+    /// Every finger down in a world and where it landed (x, in points), whatever took it: two
+    /// at once, one on each half, bring the controls back straight away.
+    down_x: HashMap<u64, f32>,
 }
 
 /// Horizon's own touch controls keep their layout here, beside `options.txt`.
@@ -80,7 +96,11 @@ impl Game<'_> {
         let r = self.renderer.as_ref()?;
         let physical = [r.config.width as f32, r.config.height as f32];
         let density = touch_controls::density(physical);
-        let scale = HudBatch::new([r.config.width, r.config.height], self.settings.gui_scale_inputs()).scale;
+        let scale = HudBatch::new(
+            [r.config.width, r.config.height],
+            self.settings.gui_scale_inputs(),
+        )
+        .scale;
         Some((physical, density, scale / density))
     }
 
@@ -91,14 +111,23 @@ impl Game<'_> {
     }
 
     fn touch_scheme(&self) -> Scheme {
-        self.touch_play.config.as_ref().map(|c| c.scheme).unwrap_or_default()
+        self.touch_play
+            .config
+            .as_ref()
+            .map(|c| c.scheme)
+            .unwrap_or_default()
     }
 
     fn touch_layout(&self) -> Option<Layout> {
         let (physical, density, gui) = self.touch_metrics()?;
         let default = Config::default();
         let config = self.touch_play.config.as_ref().unwrap_or(&default);
-        Some(Layout::new(physical[0] / density, physical[1] / density, gui, config))
+        Some(Layout::new(
+            physical[0] / density,
+            physical[1] / density,
+            gui,
+            config,
+        ))
     }
 
     /// A key or a controller hides the controls for a while.
@@ -126,13 +155,21 @@ impl Game<'_> {
     fn touch_back_screen(&self) -> bool {
         self.title.is_none()
             && self.player.is_some()
-            && matches!(self.screen, Screen::Chat | Screen::Inventory | Screen::Creative)
+            && matches!(
+                self.screen,
+                Screen::Chat | Screen::Inventory | Screen::Creative
+            )
     }
 
     /// A finger is on the Back tile over a screen: the pointer UIKit makes of it doesn't click
     /// the screen underneath (an item held on the cursor would be thrown out).
     pub(super) fn touch_back_held(&self) -> bool {
-        !self.touch_playing() && self.touch_play.fingers.values().any(|r| matches!(r, Role::Ignore))
+        !self.touch_playing()
+            && self
+                .touch_play
+                .fingers
+                .values()
+                .any(|r| matches!(r, Role::Ignore))
     }
 
     /// The controls' move vector (`[left, forward]`, -1..1), while a finger moves the player.
@@ -158,13 +195,29 @@ impl Game<'_> {
         let Some((physical, density, _)) = self.touch_metrics() else {
             return false;
         };
-        let at = [touch.location.x as f32 / density, touch.location.y as f32 / density];
+        let at = [
+            touch.location.x as f32 / density,
+            touch.location.y as f32 / density,
+        ];
+        if matches!(touch.phase, TouchPhase::Ended | TouchPhase::Cancelled) {
+            self.touch_play.down_x.remove(&touch.id);
+        }
         if !self.touch_playing() {
-            if !self.touch_play.fingers.is_empty() {
+            // What the fingers held in the world lets go once a screen opens; the Back tile's
+            // own finger stays, so its lift still closes the screen.
+            if self
+                .touch_play
+                .fingers
+                .values()
+                .any(|r| !matches!(r, Role::Ignore))
+            {
                 self.touch_release_all();
             }
             self.touch_play.editing = None;
             return self.touch_back_event(touch, at);
+        }
+        if self.touch_summon(touch, at, physical) {
+            return true;
         }
         if self.touch_scheme() == Scheme::Horizon {
             return self.touch_event_horizon(touch, physical);
@@ -218,7 +271,13 @@ impl Game<'_> {
                 self.touch_play.fingers.insert(id, role);
             }
             TouchPhase::Moved => match self.touch_play.fingers.get(&id).copied() {
-                Some(Role::Look { last, start, at: down_at, moved, breaking }) => {
+                Some(Role::Look {
+                    last,
+                    start,
+                    at: down_at,
+                    moved,
+                    breaking,
+                }) => {
                     let (dx, dy) = (touch.location.x - last.0, touch.location.y - last.1);
                     let moved = moved || (at[0] - start[0]).hypot(at[1] - start[1]) > TAP_SLOP;
                     self.touch_play.fingers.insert(
@@ -232,7 +291,14 @@ impl Game<'_> {
                         },
                     );
                     let d = f64::from(density);
-                    self.mouse.on_move(0.0, 0.0, dx / d * LOOK_SCALE, dy / d * LOOK_SCALE, true, true);
+                    self.mouse.on_move(
+                        0.0,
+                        0.0,
+                        dx / d * LOOK_SCALE,
+                        dy / d * LOOK_SCALE,
+                        true,
+                        true,
+                    );
                     self.last_input = Instant::now();
                 }
                 Some(Role::Stick { origin }) => self.touch_stick(origin, at),
@@ -243,22 +309,64 @@ impl Game<'_> {
                 }
                 _ => {}
             },
-            TouchPhase::Ended | TouchPhase::Cancelled => match self.touch_play.fingers.remove(&id) {
-                Some(Role::Button(control)) => self.touch_press(control, false),
-                Some(Role::Stick { .. } | Role::DPad) => self.touch_stop_moving(),
-                Some(Role::Look { moved, breaking, .. }) => {
-                    if breaking {
-                        let _ = self.play_mouse(MouseButton::Left, false);
-                    } else if !moved && touch.phase == TouchPhase::Ended && self.touch_taps_world() {
-                        // A tap on the world: use (place, open, eat) what the crosshair is on.
-                        let _ = self.play_mouse(MouseButton::Right, true);
-                        let _ = self.play_mouse(MouseButton::Right, false);
+            TouchPhase::Ended | TouchPhase::Cancelled => {
+                match self.touch_play.fingers.remove(&id) {
+                    Some(Role::Button(control)) => self.touch_press(control, false),
+                    Some(Role::Stick { .. } | Role::DPad) => self.touch_stop_moving(),
+                    Some(Role::Look {
+                        moved, breaking, ..
+                    }) => {
+                        if breaking {
+                            let _ = self.play_mouse(MouseButton::Left, false);
+                        } else if !moved
+                            && touch.phase == TouchPhase::Ended
+                            && self.touch_taps_world()
+                        {
+                            // A tap on the world: use (place, open, eat) what the crosshair is on.
+                            let _ = self.play_mouse(MouseButton::Right, true);
+                            let _ = self.play_mouse(MouseButton::Right, false);
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
-            },
+            }
         }
         true
+    }
+
+    /// Two fingers down together, one on each half of the screen, while a keyboard has hidden
+    /// the controls: they show at once (no waiting for the keyboard to go quiet). True when this
+    /// finger did it; it is then kept from pressing anything.
+    fn touch_summon(&mut self, touch: &Touch, at: [f32; 2], physical: [f32; 2]) -> bool {
+        match touch.phase {
+            TouchPhase::Started => {
+                let half = physical[0] / touch_controls::density(physical) / 2.0;
+                let other_side = self
+                    .touch_play
+                    .down_x
+                    .iter()
+                    .any(|(id, x)| *id != touch.id && (*x < half) != (at[0] < half));
+                self.touch_play.down_x.insert(touch.id, at[0]);
+                let hidden = !self.touch_play.shown || !self.touch_keyboard_quiet();
+                if !(other_side && hidden) {
+                    return false;
+                }
+                self.touch_play.last_keyboard = None;
+                self.touch_play.shown = true;
+                // The first finger was looking around: it doesn't tap the world when it lifts.
+                for role in self.touch_play.fingers.values_mut() {
+                    if let Role::Look { moved, .. } = role {
+                        *moved = true;
+                    }
+                }
+                self.touch_play.fingers.insert(touch.id, Role::Ignore);
+                if let Some(controls) = self.touch_play.horizon.as_mut() {
+                    controls.ignore(touch.id);
+                }
+                true
+            }
+            TouchPhase::Ended | TouchPhase::Cancelled | TouchPhase::Moved => false,
+        }
     }
 
     /// Taps and holds on the world use and break: in the tap schemes, and in every scheme while
@@ -285,8 +393,8 @@ impl Game<'_> {
             }
             TouchPhase::Ended if self.touch_play.fingers.remove(&touch.id).is_some() => {
                 if on {
-                    let _ = self.control_key_down(KeyCode::Escape, KeyCode::Escape);
-                    self.control_key_up(KeyCode::Escape);
+                    self.touch_key(KeyCode::Escape, true);
+                    self.touch_key(KeyCode::Escape, false);
                 }
                 true
             }
@@ -306,7 +414,9 @@ impl Game<'_> {
             TouchPhase::Started => {
                 let button = touch_controls::editor_buttons(&layout, selected)
                     .into_iter()
-                    .find(|(_, [x, y, w, h], _)| at[0] >= *x && at[0] < x + w && at[1] >= *y && at[1] < y + h)
+                    .find(|(_, [x, y, w, h], _)| {
+                        at[0] >= *x && at[0] < x + w && at[1] >= *y && at[1] < y + h
+                    })
                     .map(|(action, ..)| action);
                 if let Some(action) = button {
                     self.touch_edit_action(action, &layout);
@@ -335,7 +445,13 @@ impl Game<'_> {
                 }
             }
             TouchPhase::Moved => {
-                if let Some(Role::Drag { control, offset, last, .. }) = self.touch_play.fingers.get(&touch.id).copied() {
+                if let Some(Role::Drag {
+                    control,
+                    offset,
+                    last,
+                    ..
+                }) = self.touch_play.fingers.get(&touch.id).copied()
+                {
                     let centre = [
                         (at[0] + offset[0]).clamp(0.0, layout.w),
                         (at[1] + offset[1]).clamp(0.0, layout.h),
@@ -346,13 +462,28 @@ impl Game<'_> {
                     });
                     self.touch_play.fingers.insert(
                         touch.id,
-                        Role::Drag { control, offset, last: (at, Instant::now()), before: last },
+                        Role::Drag {
+                            control,
+                            offset,
+                            last: (at, Instant::now()),
+                            before: last,
+                        },
                     );
                 }
             }
             TouchPhase::Ended | TouchPhase::Cancelled => {
-                if let Some(Role::Drag { control, last, before, .. }) = self.touch_play.fingers.remove(&touch.id) {
-                    let seconds = last.1.duration_since(before.1).as_secs_f32().max(1.0 / 240.0);
+                if let Some(Role::Drag {
+                    control,
+                    last,
+                    before,
+                    ..
+                }) = self.touch_play.fingers.remove(&touch.id)
+                {
+                    let seconds = last
+                        .1
+                        .duration_since(before.1)
+                        .as_secs_f32()
+                        .max(1.0 / 240.0);
                     let speed = (last.0[0] - before.0[0]).hypot(last.0[1] - before.0[1]) / seconds;
                     let recent = last.1.elapsed() < Duration::from_millis(80);
                     let home = layout.defaults.iter().find(|d| d.0 == control).map(|d| d.1);
@@ -379,7 +510,9 @@ impl Game<'_> {
     /// Changes `control`'s entry in the layout, made from where it is now if it has none.
     fn touch_place(&mut self, layout: &Layout, control: Control, change: impl FnOnce(&mut Placed)) {
         let id = control.id();
-        let centre = layout.tile(control).map_or([layout.w / 2.0, layout.h / 2.0], |t| t.centre);
+        let centre = layout
+            .tile(control)
+            .map_or([layout.w / 2.0, layout.h / 2.0], |t| t.centre);
         let placed = self.touch_config().placed_mut();
         let entry = match placed.iter().position(|p| p.id == id) {
             Some(i) => &mut placed[i],
@@ -400,6 +533,14 @@ impl Game<'_> {
     fn touch_edit_action(&mut self, action: EditAction, layout: &Layout) {
         let selected = self.touch_play.editing.flatten();
         match action {
+            EditAction::Scheme => {
+                self.touch_play.editing = None;
+                let dir = horizon_client::logging::player_dir();
+                if let Err(e) = self.touch_config().save(&dir) {
+                    log::warn!("Horizon: could not keep the touch layout: {e}");
+                }
+                self.touch_next_scheme();
+            }
             EditAction::Done => {
                 self.touch_play.editing = None;
                 let dir = horizon_client::logging::player_dir();
@@ -412,8 +553,15 @@ impl Game<'_> {
                 self.touch_play.editing = Some(None);
             }
             EditAction::Add => {
-                let used: Vec<String> = self.touch_config().placed().iter().map(|p| p.id.clone()).collect();
-                if let Some(index) = (0..KEYS.len()).find(|i| !used.contains(&Control::Key(*i).id())) {
+                let used: Vec<String> = self
+                    .touch_config()
+                    .placed()
+                    .iter()
+                    .map(|p| p.id.clone())
+                    .collect();
+                if let Some(index) =
+                    (0..KEYS.len()).find(|i| !used.contains(&Control::Key(*i).id()))
+                {
                     self.touch_config().placed_mut().push(Placed {
                         id: Control::Key(index).id(),
                         x: 0.5,
@@ -426,8 +574,14 @@ impl Game<'_> {
             }
             EditAction::Smaller | EditAction::Bigger => {
                 if let Some(control) = selected {
-                    let factor = if action == EditAction::Bigger { 1.15 } else { 1.0 / 1.15 };
-                    self.touch_place(layout, control, |p| p.size = (p.size * factor).clamp(0.4, 2.5));
+                    let factor = if action == EditAction::Bigger {
+                        1.15
+                    } else {
+                        1.0 / 1.15
+                    };
+                    self.touch_place(layout, control, |p| {
+                        p.size = (p.size * factor).clamp(0.4, 2.5)
+                    });
                 }
             }
             EditAction::Hide => {
@@ -448,13 +602,23 @@ impl Game<'_> {
             },
             EditAction::NextKey => {
                 if let Some(Control::Key(index)) = selected {
-                    let used: Vec<String> = self.touch_config().placed().iter().map(|p| p.id.clone()).collect();
+                    let used: Vec<String> = self
+                        .touch_config()
+                        .placed()
+                        .iter()
+                        .map(|p| p.id.clone())
+                        .collect();
                     let next = (1..KEYS.len())
                         .map(|step| (index + step) % KEYS.len())
                         .find(|i| !used.contains(&Control::Key(*i).id()));
                     if let Some(next) = next {
                         let old = Control::Key(index).id();
-                        if let Some(p) = self.touch_config().placed_mut().iter_mut().find(|p| p.id == old) {
+                        if let Some(p) = self
+                            .touch_config()
+                            .placed_mut()
+                            .iter_mut()
+                            .find(|p| p.id == old)
+                        {
                             p.id = Control::Key(next).id();
                         }
                         self.touch_play.editing = Some(Some(Control::Key(next)));
@@ -469,6 +633,27 @@ impl Game<'_> {
                 }
             }
         }
+    }
+
+    /// The keyboard key a binding (`key.togglePerspective`) is on, if it is on one.
+    fn touch_bound_key(&self, binding: &str) -> Option<KeyCode> {
+        horizon_client::keybinds::key_code(self.settings.keys.get(binding))
+    }
+
+    /// Switches to the next touch scheme, keeps the choice and names it over the hotbar.
+    fn touch_next_scheme(&mut self) {
+        self.touch_release_all();
+        if let Some(controls) = self.touch_play.horizon.as_mut() {
+            controls.clear();
+        }
+        self.pad.inject_state(Default::default());
+        let next = self.touch_scheme().next();
+        self.touch_config().scheme = next;
+        if let Err(e) = next.save(&horizon_client::logging::player_dir()) {
+            log::warn!("Horizon: could not keep the touch scheme: {e}");
+        }
+        self.titles
+            .set_overlay(horizon_client::text::Text::literal(next.name()), false);
     }
 
     /// [`Scheme::Horizon`]: the finger goes to Horizon's own touch controls, which turn it into
@@ -527,15 +712,39 @@ impl Game<'_> {
         let state = controls.poll_state();
         let tap = controls.take_tap();
         let chat = std::mem::take(&mut controls.chat_requested);
-        controls.key_events();
+        let debug = std::mem::take(&mut controls.debug_requested);
+        let perspective = std::mem::take(&mut controls.perspective_requested);
+        let settings = std::mem::take(&mut controls.settings_requested);
+        let keys = controls.key_events();
         self.pad.inject_state(state);
+        // The controls' key tokens are binding names (`key.swapOffhand`): the key bound to it.
+        for (token, down) in keys {
+            let name = token.strip_prefix("action:").unwrap_or(&token);
+            if let Some(key) = self.touch_bound_key(name) {
+                self.touch_key(key, down);
+            }
+        }
+        for (asked, name, fallback) in [
+            (debug, "key.debug.overlay", KeyCode::F3),
+            (perspective, "key.togglePerspective", KeyCode::F5),
+        ] {
+            if asked {
+                let key = self.touch_bound_key(name).unwrap_or(fallback);
+                self.touch_key(key, true);
+                self.touch_key(key, false);
+            }
+        }
+        if settings {
+            self.touch_next_scheme();
+            return;
+        }
         if tap.is_some() {
             let _ = self.play_mouse(MouseButton::Right, true);
             let _ = self.play_mouse(MouseButton::Right, false);
         }
         if chat {
-            let _ = self.control_key_down(KeyCode::KeyT, KeyCode::KeyT);
-            self.control_key_up(KeyCode::KeyT);
+            self.touch_key(KeyCode::KeyT, true);
+            self.touch_key(KeyCode::KeyT, false);
         }
     }
 
@@ -553,9 +762,12 @@ impl Game<'_> {
             .fingers
             .iter()
             .filter_map(|(id, role)| match role {
-                Role::Look { at, moved: false, breaking: false, .. } if at.elapsed() >= HOLD_TO_BREAK => {
-                    Some(*id)
-                }
+                Role::Look {
+                    at,
+                    moved: false,
+                    breaking: false,
+                    ..
+                } if at.elapsed() >= HOLD_TO_BREAK => Some(*id),
                 _ => None,
             })
             .collect();
@@ -633,26 +845,64 @@ impl Game<'_> {
             }
             Control::Sneak => {
                 // Hold: while the tile is held. Toggle: one tap holds it, the next lets go.
-                let now = if hold { down } else if down { !self.touch_play.sneaking } else { self.touch_play.sneaking };
+                let now = if hold {
+                    down
+                } else if down {
+                    !self.touch_play.sneaking
+                } else {
+                    self.touch_play.sneaking
+                };
                 if now != self.touch_play.sneaking {
                     self.touch_play.sneaking = now;
                     self.touch_hold_key(KeyCode::ShiftLeft, now);
                 }
             }
             Control::Sprint => {
-                let now = if hold { down } else if down { !self.touch_play.sprinting } else { self.touch_play.sprinting };
+                let now = if hold {
+                    down
+                } else if down {
+                    !self.touch_play.sprinting
+                } else {
+                    self.touch_play.sprinting
+                };
                 self.touch_play.sprinting = now;
                 self.touch_sync_sprint();
             }
             other => {
-                if let Some(key) = other.key() {
-                    if down {
-                        let _ = self.control_key_down(key, key);
-                    } else {
-                        self.control_key_up(key);
-                    }
+                // A rebound key follows its binding, as the keyboard's would.
+                let binding = match other {
+                    Control::Debug => Some("key.debug.overlay"),
+                    Control::Perspective => Some("key.togglePerspective"),
+                    Control::Chat => Some("key.chat"),
+                    Control::Inventory => Some("key.inventory"),
+                    Control::Jump => Some("key.jump"),
+                    _ => None,
+                };
+                if let Some(key) = binding
+                    .and_then(|b| self.touch_bound_key(b))
+                    .or(other.key())
+                {
+                    self.touch_key(key, down);
                 }
             }
+        }
+    }
+
+    /// A tile's key, down or up, the way the keyboard's goes: the debug keys hear it first
+    /// (F3 toggles the overlay on its release, F3 with another key is a debug combination),
+    /// then the open screen or the game.
+    fn touch_key(&mut self, key: KeyCode, down: bool) {
+        use horizon_client::debug_keys::KeyAction;
+        if down {
+            self.physical_keys.insert(key);
+            if self.debug_key(key, KeyAction::Press) {
+                return;
+            }
+            let _ = self.control_key_down(key, key);
+        } else {
+            self.physical_keys.remove(&key);
+            let _ = self.debug_key(key, KeyAction::Release);
+            self.control_key_up(key);
         }
     }
 
@@ -719,8 +969,15 @@ impl Game<'_> {
                 _ => None,
             })
             .zip(self.touch_play.knob);
-        let dpad = if self.touch_play.fingers.values().any(|r| matches!(r, Role::DPad)) {
-            self.touch_play.knob.map_or([0.0; 2], |at| layout.dpad_direction(at))
+        let dpad = if self
+            .touch_play
+            .fingers
+            .values()
+            .any(|r| matches!(r, Role::DPad))
+        {
+            self.touch_play
+                .knob
+                .map_or([0.0; 2], |at| layout.dpad_direction(at))
         } else {
             [0.0; 2]
         };

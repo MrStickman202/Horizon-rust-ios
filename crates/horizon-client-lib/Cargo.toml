@@ -42,6 +42,8 @@ rayon = "1.10"
 horizon-hdr = { path = "../horizon-hdr" }
 horizon-world = { path = "../horizon-world" }
 horizon-protocol = { path = "../horizon-protocol" }
+# The iOS home screen's glass look and night sky (ios_home.rs), the launcher's own tokens.
+horizon-theme = { path = "../horizon-theme" }
 # server.properties, eula.txt and the user lists, shared with horizon-server.
 horizon-server-files = { path = "../horizon-server-files" }
 # The JDK's clock, for the LAN host's random seed (lan/mod.rs).
@@ -156,8 +158,6 @@ horizon-mod-wasm = { path = "../horizon-mod-wasm", features = ["listener-fixture
 tempfile = "3"
 mod_platform = { package = "horizon-mod-api", path = "../horizon-mod-api", features = ["testing"] }
 mod_api = { package = "horizon-mod-vocab", path = "../horizon-mod-vocab", features = ["testing"] }
-# ui_theme's unit tests draw text in the design system's fonts.
-horizon-theme = { path = "../horizon-theme" }
 horizon-client-render = { path = "../horizon-client-render", features = ["test-support"] }
 horizon-items = { path = "../horizon-items", features = ["test-support"] }
 # Reads back the captures the server_perf tests write.

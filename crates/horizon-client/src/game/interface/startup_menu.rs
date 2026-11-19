@@ -12,6 +12,9 @@ use winit::{event::KeyEvent, keyboard::ModifiersState};
 
 #[derive(Default)]
 pub(super) struct StartupMenu {
+    /// The window asked for the on-screen keyboard (iOS): a text box has the focus.
+    #[cfg(target_os = "ios")]
+    ime_allowed: bool,
     title: Option<Title>,
     options: OptionsUi,
     options_open: bool,
@@ -1093,6 +1096,26 @@ impl Loading {
             }
         }
         self.menu.key_synthetic = was;
+    }
+
+    /// iOS: the on-screen keyboard shows while a text box of the menu has the focus (the
+    /// settings and Browse mods searches, a world's name), as `Game::sync_ime` does in a world.
+    #[cfg(target_os = "ios")]
+    pub(super) fn menu_sync_ime(&mut self) {
+        let want = if self.menu.options_open {
+            self.menu.options.typing()
+        } else {
+            self.menu
+                .title
+                .as_mut()
+                .is_some_and(|t| t.has_caret_field() || t.focused_field().is_some())
+        };
+        if want != self.menu.ime_allowed
+            && let Some(window) = &self.window
+        {
+            window.set_ime_allowed(want);
+            self.menu.ime_allowed = want;
+        }
     }
 
     pub(super) fn menu_event(

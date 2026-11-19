@@ -10711,7 +10711,9 @@ impl<'a> Game<'a> {
             unclaimed_window: false,
             unclaimed_modifiers: None,
             focus_after_run: None,
-            ime_allowed: false,
+            // iOS: the start menu may hand over with the on-screen keyboard up; the first sync
+            // puts it away unless a text box wants it.
+            ime_allowed: cfg!(target_os = "ios"),
             ime_area: None,
             focus_lost: None,
             modifiers: winit::keyboard::ModifiersState::empty(),

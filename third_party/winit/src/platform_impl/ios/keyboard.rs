@@ -120,6 +120,24 @@ fn key_changed(usage: u32, pressed: bool) {
     let Some(physical) = key_code(usage) else {
         return;
     };
+    // iPadOS can hold back a key's release while Cmd is down: when Cmd goes up, the F keys it
+    // made (Cmd+3 is F3) go up with it, so F3's overlay toggles and nothing stays held.
+    let orphans: Vec<KeyCode> = if !pressed && matches!(physical, KeyCode::SuperLeft | KeyCode::SuperRight) {
+        DOWN.with(|down| {
+            let mut down = down.borrow_mut();
+            let mut gone = Vec::new();
+            down.retain(|(u, sent)| {
+                let made = key_code(*u).is_some_and(|own| own != *sent);
+                if made {
+                    gone.push(*sent);
+                }
+                !made
+            });
+            gone
+        })
+    } else {
+        Vec::new()
+    };
     let (sent, modifiers) = DOWN.with(|down| {
         let mut down = down.borrow_mut();
         let sent = if pressed {
@@ -143,6 +161,28 @@ fn key_changed(usage: u32, pressed: bool) {
         },
     };
     let mut events = Vec::new();
+    for code in orphans {
+        let logical_key = named_key(code).map_or(
+            Key::Unidentified(crate::keyboard::NativeKey::Unidentified),
+            Key::Named,
+        );
+        events.push(EventWrapper::StaticEvent(Event::WindowEvent {
+            window_id,
+            event: WindowEvent::KeyboardInput {
+                device_id: DEVICE_ID,
+                event: KeyEvent {
+                    physical_key: PhysicalKey::Code(code),
+                    logical_key,
+                    text: None,
+                    location: location(code),
+                    state: ElementState::Released,
+                    repeat: false,
+                    platform_specific: KeyEventExtra {},
+                },
+                is_synthetic: false,
+            },
+        }));
+    }
     if matches!(logical_key, Key::Named(NamedKey::Shift | NamedKey::Control | NamedKey::Alt | NamedKey::Super)) {
         events.push(EventWrapper::StaticEvent(Event::WindowEvent {
             window_id,
