@@ -59,6 +59,8 @@ enum Role {
     },
     /// Nothing more until it lifts.
     Ignore,
+    /// On the Back tile over a screen: its lift closes the screen.
+    Back,
 }
 
 #[derive(Default)]
@@ -169,7 +171,7 @@ impl Game<'_> {
                 .touch_play
                 .fingers
                 .values()
-                .any(|r| matches!(r, Role::Ignore))
+                .any(|r| matches!(r, Role::Back))
     }
 
     /// The controls' move vector (`[left, forward]`, -1..1), while a finger moves the player.
@@ -209,10 +211,13 @@ impl Game<'_> {
                 .touch_play
                 .fingers
                 .values()
-                .any(|r| !matches!(r, Role::Ignore))
+                .any(|r| !matches!(r, Role::Ignore | Role::Back))
             {
                 self.touch_release_all();
             }
+            self.touch_play
+                .fingers
+                .retain(|_, r| matches!(r, Role::Back));
             self.touch_play.editing = None;
             return self.touch_back_event(touch, at);
         }
@@ -220,6 +225,11 @@ impl Game<'_> {
             return true;
         }
         if self.touch_scheme() == Scheme::Horizon {
+            // The map keeps only what the summon or the editor gave a finger here: its lift
+            // forgets it (Horizon's controls track their own fingers).
+            if matches!(touch.phase, TouchPhase::Ended | TouchPhase::Cancelled) {
+                self.touch_play.fingers.remove(&touch.id);
+            }
             return self.touch_event_horizon(touch, physical);
         }
         if self.touch_play.editing.is_some() {
@@ -388,7 +398,7 @@ impl Game<'_> {
             && (at[1] - back.centre[1]).abs() <= back.half + 6.0;
         match touch.phase {
             TouchPhase::Started if on => {
-                self.touch_play.fingers.insert(touch.id, Role::Ignore);
+                self.touch_play.fingers.insert(touch.id, Role::Back);
                 true
             }
             TouchPhase::Ended if self.touch_play.fingers.remove(&touch.id).is_some() => {
