@@ -271,7 +271,10 @@ pub(super) fn run_loading(
     // reads the player's language from the strings compiled in, as the setup screen does.
     let launcher = ios_launcher::Launcher::at_start();
     if launcher.is_some() && horizon_client::lang::current().is_none() {
-        horizon_client::lang::set(horizon_client::lang::Language::load(&[], &settings.language));
+        horizon_client::lang::set(horizon_client::lang::Language::load(
+            &[],
+            &settings.language,
+        ));
     }
     let loading = Loading {
         window: None,
