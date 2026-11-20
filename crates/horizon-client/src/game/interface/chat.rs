@@ -1339,6 +1339,36 @@ impl Game<'_> {
         }
     }
     /// Text typed into the chat box (control socket `chat`).
+    /// iOS sends a key's text apart from the key itself, sometimes after it: the `t` or `/` of
+    /// the key that just opened chat would be typed into it (`//`). That character, within a
+    /// moment of opening and while the box still holds only what it opened with, isn't typed.
+    pub(super) fn chat_key_echo(&self, text: &str) -> bool {
+        if !cfg!(target_os = "ios") || self.screen != Screen::Chat {
+            return false;
+        }
+        let fresh = self
+            .ui
+            .chat_opened
+            .is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(400));
+        let untouched = self
+            .ui
+            .chat_screen
+            .as_ref()
+            .is_some_and(|s| matches!(s.value(), "" | "/"));
+        if !fresh || !untouched {
+            return false;
+        }
+        let typed = text.to_lowercase();
+        ["key.chat", "key.command"].iter().any(|binding| {
+            let name = self.settings.keys.get(binding);
+            match name.strip_prefix("key.keyboard.") {
+                Some("slash") => typed == "/",
+                Some(key) if key.chars().count() == 1 => typed == key,
+                _ => false,
+            }
+        })
+    }
+
     pub(super) fn chat_type(&mut self, text: &str) {
         let m = Measure(&self.gui.atlas.font);
         let c = Commands {

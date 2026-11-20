@@ -9052,7 +9052,11 @@ impl Game<'_> {
             && let Some(text) = key_event.text.as_deref()
         {
             let text: String = text.chars().filter(|c| !c.is_control()).collect();
-            if !text.is_empty() && self.text_field_focused() && self.types_text() {
+            if !text.is_empty()
+                && self.text_field_focused()
+                && self.types_text()
+                && !self.chat_key_echo(&text)
+            {
                 self.screen_text_each(&text, |game, c| {
                     // Err only says no box of the screen takes it.
                     let _ = game.type_chars_into_screen(c);

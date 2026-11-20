@@ -267,6 +267,12 @@ pub(super) fn run_loading(
         &progress,
     )?;
     let menu = startup_menu::StartupMenu::new(&options, pack_error.as_deref())?;
+    // iOS: the home screen shows before the menu's resources (and their language) arrive, so it
+    // reads the player's language from the strings compiled in, as the setup screen does.
+    let launcher = ios_launcher::Launcher::at_start();
+    if launcher.is_some() && horizon_client::lang::current().is_none() {
+        horizon_client::lang::set(horizon_client::lang::Language::load(&[], &settings.language));
+    }
     let loading = Loading {
         window: None,
         renderer: None,
@@ -290,7 +296,7 @@ pub(super) fn run_loading(
         title_drawn: false,
         menu,
         error: None,
-        launcher: ios_launcher::Launcher::at_start(),
+        launcher,
     };
     let mut app = App::Loading(Box::new(loading));
     let result = EventLoop::new()?.run_app(&mut app);
