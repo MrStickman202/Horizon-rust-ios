@@ -398,6 +398,7 @@ impl PlayerSender {
                 Arc::new(KeepAliveWatch {
                     start: Instant::now(),
                     alive: Arc::new(AtomicI64::new(-1)),
+                    patient: false,
                 }),
             ),
             wire: None,
@@ -2014,6 +2015,10 @@ fn play(
     let watch = Arc::new(KeepAliveWatch {
         start: Instant::now(),
         alive: Arc::new(AtomicI64::new(-1)),
+        // iOS stops every thread of an app it sends to the background: the window's own
+        // client, in this process, can't answer then, and on the way back every keep-alive
+        // it missed would time it out ("End of stream" on returning to the game).
+        patient: cfg!(target_os = "ios") && c.is_memory(),
     });
     let undrained = Arc::<Undrained>::default();
     let sender = PlayerSender {
@@ -2458,12 +2463,18 @@ struct KeepAliveWatch {
     start: Instant,
     /// The id of the last keep-alive the client answered (-1: none yet).
     alive: Arc<AtomicI64>,
+    /// Never times out: the window's own client on iOS, which the system pauses with the
+    /// server in the background.
+    patient: bool,
 }
 impl KeepAliveWatch {
     /// keepConnectionAlive sends a keep-alive 15 s after the last and drops
     /// a client that has not answered it 15 s later: nothing answered of
     /// what was sent in the last 30 s.
     fn timed_out(&self) -> bool {
+        if self.patient {
+            return false;
+        }
         let answered = u64::try_from(self.alive.load(Ordering::Relaxed)).unwrap_or(0);
         self.start.elapsed() > Duration::from_millis(answered) + 2 * KEEP_ALIVE_EVERY
     }
@@ -3573,6 +3584,7 @@ mod tests {
             watch: Arc::new(KeepAliveWatch {
                 start: Instant::now(),
                 alive: Arc::new(AtomicI64::new(-1)),
+                patient: false,
             }),
             latency: Arc::new(AtomicI32::new(0)),
             sent_at: None,
@@ -3638,6 +3650,7 @@ mod tests {
         let watch = |start, answered| KeepAliveWatch {
             start,
             alive: Arc::new(AtomicI64::new(answered)),
+            patient: false,
         };
         assert!(!watch(ago(29), -1).timed_out());
         assert!(watch(ago(31), -1).timed_out());
@@ -3711,6 +3724,7 @@ mod tests {
             watch: Arc::new(KeepAliveWatch {
                 start: Instant::now(),
                 alive: Arc::new(AtomicI64::new(-1)),
+                patient: false,
             }),
             latency: Arc::new(AtomicI32::new(0)),
             sent_at: pending.map(|id| (id, Instant::now())),
@@ -3764,6 +3778,7 @@ mod tests {
             watch: Arc::new(KeepAliveWatch {
                 start: Instant::now(),
                 alive: Arc::new(AtomicI64::new(-1)),
+                patient: false,
             }),
             latency: Arc::new(AtomicI32::new(0)),
             sent_at: None,
@@ -3818,6 +3833,7 @@ mod outgoing_budget_tests {
                 Arc::new(KeepAliveWatch {
                     start: Instant::now(),
                     alive: Arc::new(AtomicI64::new(-1)),
+                    patient: false,
                 }),
             ),
             wire: None,
